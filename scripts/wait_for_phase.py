@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 
 class Backend(Enum):
@@ -162,7 +162,7 @@ def get_k8s_status(job_name: str, namespace: str) -> AgentStatus:
 
 def wait_for_agents(
     agents: list[str],
-    get_status_fn,
+    get_status_fn: Callable[[str], AgentStatus],
     timeout: int,
     poll_interval: int,
     fail_fast: bool,
@@ -175,10 +175,11 @@ def wait_for_agents(
         all_complete = True
         has_failure = False
         
-        for agent in agents:
-            if agent in final_statuses:
-                continue
-            
+        # Get pending agents for batch status check
+        pending = [a for a in agents if a not in final_statuses]
+        
+        # Batch status checks for efficiency
+        for agent in pending:
             status = get_status_fn(agent)
             
             if status.status in (Status.COMPLETED, Status.FAILED):

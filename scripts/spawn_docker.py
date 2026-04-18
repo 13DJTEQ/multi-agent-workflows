@@ -10,23 +10,35 @@ Usage:
 import argparse
 import json
 import os
+import shlex
 import subprocess
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
 
 @dataclass
 class AgentResult:
+    """Result of spawning or completing an agent container."""
     task_id: str
     task: str
     container_id: str
     status: str  # "running", "completed", "failed"
     exit_code: Optional[int] = None
     error: Optional[str] = None
+    retries: int = 0
+    start_time: Optional[float] = None
+    end_time: Optional[float] = None
+    
+    @property
+    def duration_seconds(self) -> Optional[float]:
+        """Calculate task duration if both times are set."""
+        if self.start_time and self.end_time:
+            return self.end_time - self.start_time
+        return None
 
 
 def generate_task_id(task: str, index: int, phase: Optional[str] = None) -> str:
@@ -86,7 +98,6 @@ def spawn_container(
     
     # Extra Docker arguments
     if docker_args:
-        import shlex
         cmd.extend(shlex.split(docker_args))
     
     # Image and command
@@ -125,13 +136,26 @@ def wait_for_container(task_id: str, timeout: int = 3600) -> tuple[int, str]:
             text=True,
             timeout=timeout,
         )
-        exit_code = int(result.stdout.strip())
+        exit_code_str = result.stdout.strip()
+        if not exit_code_str:
+            return -1, "Empty response from docker wait"
+        exit_code = int(exit_code_str)
         return exit_code, ""
     except subprocess.TimeoutExpired:
         subprocess.run(["docker", "stop", task_id], capture_output=True)
         return -1, "Timeout"
+    except ValueError as e:
+        return -1, f"Invalid exit code: {e}"
     except Exception as e:
         return -1, str(e)
+
+
+def calculate_backoff(retry: int, base_delay: float = 2.0, max_delay: float = 60.0) -> float:
+    """Calculate exponential backoff delay with jitter."""
+    import random
+    delay = min(base_delay * (2 ** retry), max_delay)
+    jitter = delay * 0.1 * random.random()
+    return delay + jitter
 
 
 def get_container_logs(task_id: str) -> str:
@@ -144,35 +168,77 @@ def get_container_logs(task_id: str) -> str:
     return result.stdout + result.stderr
 
 
-def check_circuit_breaker(results: list[AgentResult], threshold: float) -> bool:
-    """Check if failure rate exceeds threshold."""
-    if not results:
+def check_circuit_breaker(results: list[AgentResult], threshold: float, min_samples: int = 3) -> bool:
+    """Check if failure rate exceeds threshold.
+    
+    Args:
+        results: List of completed agent results
+        threshold: Failure rate threshold (0.0-1.0)
+        min_samples: Minimum samples before triggering (avoids early false positives)
+    """
+    if len(results) < min_samples:
         return False
     failed = sum(1 for r in results if r.status == "failed")
     return (failed / len(results)) > threshold
 
 
+def validate_tasks_file(path: Path) -> list[str]:
+    """Validate and load tasks from file."""
+    if not path.exists():
+        print(f"Error: Tasks file not found: {path}", file=sys.stderr)
+        sys.exit(1)
+    tasks = [line.strip() for line in path.read_text().splitlines() if line.strip() and not line.startswith("#")]
+    if not tasks:
+        print(f"Error: No tasks found in {path}", file=sys.stderr)
+        sys.exit(1)
+    return tasks
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Spawn parallel Docker agents")
-    parser.add_argument("--tasks", nargs="+", help="List of task prompts")
-    parser.add_argument("--tasks-file", type=Path, help="File with tasks (one per line)")
-    parser.add_argument("--image", default="warpdotdev/dev-base:latest", help="Docker image")
-    parser.add_argument("--workspace", type=Path, default=Path.cwd(), help="Workspace directory")
-    parser.add_argument("--output-dir", type=Path, default=Path("./outputs"), help="Output directory")
-    parser.add_argument("--memory", default="4g", help="Memory limit per container")
-    parser.add_argument("--cpus", default="2", help="CPU limit per container")
-    parser.add_argument("--network", help="Docker network name")
-    parser.add_argument("--share", default="team", choices=["team", "public", "private"], help="Session sharing")
-    parser.add_argument("--parallel", type=int, default=4, help="Max parallel containers")
-    parser.add_argument("--timeout", type=int, default=3600, help="Timeout per task (seconds)")
-    parser.add_argument("--circuit-breaker", type=float, default=0.5, help="Stop if failure rate exceeds threshold")
-    parser.add_argument("--retry-failed", action="store_true", help="Retry failed tasks")
-    parser.add_argument("--max-retries", type=int, default=3, help="Max retries per task")
-    parser.add_argument("--env", nargs="+", help="Extra env vars (KEY=VALUE)")
-    parser.add_argument("--phase", help="Phase identifier for multi-phase workflows")
-    parser.add_argument("--docker-args", help="Extra Docker run arguments (quoted string)")
-    parser.add_argument("--wait", action="store_true", help="Wait for all containers to complete")
-    parser.add_argument("--json", action="store_true", help="Output results as JSON")
+    parser = argparse.ArgumentParser(
+        description="Spawn parallel agents in Docker containers",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s --tasks "Analyze file.py" "Test module.py" --wait --json
+  %(prog)s --tasks-file tasks.txt --phase analysis --parallel 8
+  %(prog)s --tasks "Run linter" --docker-args "--gpus all" --memory 8g
+""",
+    )
+    
+    # Task input (mutually exclusive)
+    task_group = parser.add_argument_group("Task Input (one required)")
+    task_group.add_argument("--tasks", nargs="+", metavar="PROMPT", help="Task prompts to execute")
+    task_group.add_argument("--tasks-file", type=Path, metavar="FILE", help="File with tasks (one per line, # comments allowed)")
+    
+    # Container configuration
+    container_group = parser.add_argument_group("Container Configuration")
+    container_group.add_argument("--image", default="warpdotdev/dev-base:latest", help="Docker image (default: %(default)s)")
+    container_group.add_argument("--workspace", type=Path, default=Path.cwd(), metavar="DIR", help="Workspace directory to mount")
+    container_group.add_argument("--output-dir", type=Path, default=Path("./outputs"), metavar="DIR", help="Output directory (default: %(default)s)")
+    container_group.add_argument("--memory", default="4g", help="Memory limit per container (default: %(default)s)")
+    container_group.add_argument("--cpus", default="2", help="CPU limit per container (default: %(default)s)")
+    container_group.add_argument("--network", metavar="NAME", help="Docker network name")
+    container_group.add_argument("--docker-args", metavar="ARGS", help="Extra Docker run arguments (quoted string)")
+    container_group.add_argument("--env", nargs="+", metavar="KEY=VALUE", help="Extra environment variables")
+    
+    # Execution control
+    exec_group = parser.add_argument_group("Execution Control")
+    exec_group.add_argument("--parallel", type=int, default=4, metavar="N", help="Max parallel containers (default: %(default)s)")
+    exec_group.add_argument("--timeout", type=int, default=3600, metavar="SEC", help="Timeout per task in seconds (default: %(default)s)")
+    exec_group.add_argument("--phase", metavar="ID", help="Phase identifier for multi-phase workflows")
+    exec_group.add_argument("--share", default="team", choices=["team", "public", "private"], help="Session sharing mode (default: %(default)s)")
+    
+    # Fault tolerance
+    fault_group = parser.add_argument_group("Fault Tolerance")
+    fault_group.add_argument("--circuit-breaker", type=float, default=0.5, metavar="RATIO", help="Stop if failure rate exceeds threshold (default: %(default)s)")
+    fault_group.add_argument("--retry-failed", action="store_true", help="Retry failed tasks with exponential backoff")
+    fault_group.add_argument("--max-retries", type=int, default=3, metavar="N", help="Max retries per task (default: %(default)s)")
+    
+    # Output options
+    out_group = parser.add_argument_group("Output")
+    out_group.add_argument("--wait", action="store_true", help="Wait for all containers to complete")
+    out_group.add_argument("--json", action="store_true", help="Output results as JSON (includes metrics)")
     
     args = parser.parse_args()
     
@@ -183,14 +249,12 @@ def main():
         sys.exit(1)
     
     # Get tasks
-    tasks = []
     if args.tasks:
         tasks = args.tasks
     elif args.tasks_file:
-        tasks = [line.strip() for line in args.tasks_file.read_text().splitlines() if line.strip()]
+        tasks = validate_tasks_file(args.tasks_file)
     else:
-        print("Error: Must provide --tasks or --tasks-file", file=sys.stderr)
-        sys.exit(1)
+        parser.error("Must provide --tasks or --tasks-file")
     
     # Parse extra environment variables
     extra_env = {}
@@ -206,6 +270,7 @@ def main():
     results: list[AgentResult] = []
     
     print(f"Spawning {len(tasks)} agents...", file=sys.stderr)
+    spawn_start = time.time()
     
     with ThreadPoolExecutor(max_workers=args.parallel) as executor:
         futures = {}
@@ -250,21 +315,26 @@ def main():
         
         for result in results:
             if result.status == "running":
+                result.start_time = time.time()
                 exit_code, error = wait_for_container(result.task_id, args.timeout)
+                result.end_time = time.time()
                 result.exit_code = exit_code
                 
                 if exit_code == 0:
                     result.status = "completed"
-                    print(f"✓ Completed: {result.task_id}", file=sys.stderr)
+                    print(f"✓ Completed: {result.task_id} ({result.duration_seconds:.1f}s)", file=sys.stderr)
                 else:
                     result.status = "failed"
                     result.error = error or f"Exit code: {exit_code}"
                     print(f"✗ Failed: {result.task_id} - {result.error}", file=sys.stderr)
                     
-                    # Retry logic
+                    # Retry logic with exponential backoff
                     if args.retry_failed:
                         for retry in range(args.max_retries):
-                            print(f"  Retrying ({retry + 1}/{args.max_retries})...", file=sys.stderr)
+                            backoff = calculate_backoff(retry)
+                            print(f"  Retrying ({retry + 1}/{args.max_retries}) after {backoff:.1f}s...", file=sys.stderr)
+                            time.sleep(backoff)
+                            
                             # Remove failed container
                             subprocess.run(["docker", "rm", "-f", result.task_id], capture_output=True)
                             
@@ -288,16 +358,26 @@ def main():
                                 if exit_code == 0:
                                     result.status = "completed"
                                     result.task_id = new_result.task_id
+                                    result.retries = retry + 1
                                     print(f"  ✓ Retry succeeded", file=sys.stderr)
                                     break
     
     # Output results
+    spawn_duration = time.time() - spawn_start
+    
     if args.json:
+        completed_durations = [r.duration_seconds for r in results if r.duration_seconds]
         output = {
             "total": len(results),
             "running": sum(1 for r in results if r.status == "running"),
             "completed": sum(1 for r in results if r.status == "completed"),
             "failed": sum(1 for r in results if r.status == "failed"),
+            "total_retries": sum(r.retries for r in results),
+            "metrics": {
+                "spawn_duration_seconds": spawn_duration,
+                "avg_task_duration_seconds": sum(completed_durations) / len(completed_durations) if completed_durations else None,
+                "max_task_duration_seconds": max(completed_durations) if completed_durations else None,
+            },
             "results": [
                 {
                     "task_id": r.task_id,
@@ -306,6 +386,8 @@ def main():
                     "status": r.status,
                     "exit_code": r.exit_code,
                     "error": r.error,
+                    "retries": r.retries,
+                    "duration_seconds": r.duration_seconds,
                 }
                 for r in results
             ],

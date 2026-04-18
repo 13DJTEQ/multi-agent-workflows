@@ -7,14 +7,17 @@ Usage:
     python3 aggregate_results.py --input-dir ./outputs --strategy concat --output ./report.md
 """
 
+from __future__ import annotations
+
 import argparse
 import json
-import os
 import sys
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable, TypeVar
+
+T = TypeVar("T")
 
 
 def load_json_file(path: Path) -> Optional[dict]:
@@ -34,22 +37,20 @@ def load_text_file(path: Path) -> Optional[str]:
 
 
 def find_result_files(input_dir: Path, pattern: str = "result.json") -> list[Path]:
-    """Find all result files in the input directory."""
-    results = []
+    """Find all result files in the input directory.
     
+    Search order: exact pattern match > any .json > any .md
+    """
     # Direct files matching pattern
-    for f in input_dir.glob(f"**/{pattern}"):
-        results.append(f)
+    results = list(input_dir.glob(f"**/{pattern}"))
     
-    # Also check for .json files in subdirectories
+    # Fallback to any JSON files
     if not results:
-        for f in input_dir.glob("**/*.json"):
-            results.append(f)
+        results = list(input_dir.glob("**/*.json"))
     
-    # Also check for .md files for concat strategy
+    # Fallback to markdown files for concat strategy
     if not results:
-        for f in input_dir.glob("**/*.md"):
-            results.append(f)
+        results = list(input_dir.glob("**/*.md"))
     
     return sorted(results)
 
@@ -194,12 +195,28 @@ STRATEGIES: dict[str, Callable] = {
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Aggregate results from parallel agents")
+    parser = argparse.ArgumentParser(
+        description="Aggregate results from parallel agents",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Strategies:
+  merge   - Combine dict outputs (last-wins on conflicts)
+  concat  - Append all outputs sequentially
+  vote    - Majority vote for boolean/choice fields
+  latest  - Take most recent output by timestamp
+
+Examples:
+  %(prog)s --input-dir ./outputs -o report.json --strategy merge
+  %(prog)s --input-dir ./outputs -o report.md --strategy concat
+  %(prog)s --input-files a.json b.json c.json -o vote.json --strategy vote --vote-field approved
+""",
+    )
     
     # Input options
-    parser.add_argument("--input-dir", type=Path, help="Directory containing agent outputs")
-    parser.add_argument("--input-files", nargs="+", type=Path, help="Specific files to aggregate")
-    parser.add_argument("--pattern", default="result.json", help="File pattern to match")
+    input_group = parser.add_argument_group("Input (one required)")
+    input_group.add_argument("--input-dir", type=Path, metavar="DIR", help="Directory containing agent outputs")
+    input_group.add_argument("--input-files", nargs="+", type=Path, metavar="FILE", help="Specific files to aggregate")
+    input_group.add_argument("--pattern", default="result.json", help="File pattern to match (default: %(default)s)")
     
     # Output options
     parser.add_argument("--output", "-o", type=Path, required=True, help="Output file path")
@@ -242,22 +259,29 @@ def main():
     
     print(f"Found {len(input_files)} result files", file=sys.stderr)
     
-    # Load results
-    results = []
-    provenance = {}
-    failed_files = []
+    # Load results (parallel for large file counts)
+    results: list[Any] = []
+    provenance: dict[str, dict] = {}
+    failed_files: list[str] = []
     
-    for f in input_files:
-        # Determine file type
-        if f.suffix in (".json",):
-            data = load_json_file(f)
-        else:
-            data = load_text_file(f)
-        
+    def load_file(f: Path) -> tuple[Path, Any]:
+        """Load a single file, return (path, data or None)."""
+        if f.suffix == ".json":
+            return f, load_json_file(f)
+        return f, load_text_file(f)
+    
+    # Use threads for I/O-bound file loading when many files
+    if len(input_files) > 10:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=min(8, len(input_files))) as executor:
+            loaded = list(executor.map(load_file, input_files))
+    else:
+        loaded = [load_file(f) for f in input_files]
+    
+    for f, data in loaded:
         if data is not None:
             results.append(data)
             if args.include_provenance:
-                # Use parent directory name as agent ID if available
                 agent_id = f.parent.name if f.parent != args.input_dir else f.stem
                 provenance[agent_id] = {
                     "file": str(f),
