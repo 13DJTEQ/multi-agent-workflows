@@ -1,0 +1,377 @@
+#!/usr/bin/env python3
+"""
+Aggregate results from multiple parallel agents.
+
+Usage:
+    python3 aggregate_results.py --input-dir ./outputs --output ./report.json
+    python3 aggregate_results.py --input-dir ./outputs --strategy concat --output ./report.md
+"""
+
+import argparse
+import json
+import os
+import sys
+from collections import Counter
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Callable, Optional
+
+
+def load_json_file(path: Path) -> Optional[dict]:
+    """Load a JSON file, returning None on error."""
+    try:
+        return json.loads(path.read_text())
+    except Exception:
+        return None
+
+
+def load_text_file(path: Path) -> Optional[str]:
+    """Load a text file, returning None on error."""
+    try:
+        return path.read_text()
+    except Exception:
+        return None
+
+
+def find_result_files(input_dir: Path, pattern: str = "result.json") -> list[Path]:
+    """Find all result files in the input directory."""
+    results = []
+    
+    # Direct files matching pattern
+    for f in input_dir.glob(f"**/{pattern}"):
+        results.append(f)
+    
+    # Also check for .json files in subdirectories
+    if not results:
+        for f in input_dir.glob("**/*.json"):
+            results.append(f)
+    
+    # Also check for .md files for concat strategy
+    if not results:
+        for f in input_dir.glob("**/*.md"):
+            results.append(f)
+    
+    return sorted(results)
+
+
+def merge_dicts(dicts: list[dict], policy: str = "last") -> dict:
+    """Merge multiple dictionaries."""
+    result = {}
+    
+    for d in dicts:
+        for key, value in d.items():
+            if key not in result:
+                result[key] = value
+            elif policy == "last":
+                result[key] = value
+            elif policy == "first":
+                pass  # Keep existing
+            elif policy == "concat" and isinstance(result[key], list) and isinstance(value, list):
+                result[key] = result[key] + value
+            elif policy == "error":
+                raise ValueError(f"Conflict on key: {key}")
+    
+    return result
+
+
+def strategy_merge(
+    results: list[dict],
+    merge_policy: str = "last",
+    **kwargs,
+) -> dict:
+    """Merge strategy: combine non-conflicting outputs."""
+    return merge_dicts(results, policy=merge_policy)
+
+
+def strategy_concat(
+    results: list[Any],
+    separator: str = "\n\n",
+    **kwargs,
+) -> str:
+    """Concat strategy: append all outputs sequentially."""
+    text_results = []
+    for r in results:
+        if isinstance(r, str):
+            text_results.append(r)
+        elif isinstance(r, dict):
+            # Try to extract text content
+            if "content" in r:
+                text_results.append(r["content"])
+            elif "text" in r:
+                text_results.append(r["text"])
+            elif "output" in r:
+                text_results.append(r["output"])
+            else:
+                text_results.append(json.dumps(r, indent=2))
+        else:
+            text_results.append(str(r))
+    
+    return separator.join(text_results)
+
+
+def strategy_vote(
+    results: list[dict],
+    vote_field: str = "decision",
+    vote_threshold: float = 0.5,
+    weighted: bool = False,
+    confidence_field: str = "confidence",
+    **kwargs,
+) -> dict:
+    """Vote strategy: use majority for boolean/choice outputs."""
+    votes = []
+    confidences = []
+    
+    for r in results:
+        if vote_field in r:
+            votes.append(r[vote_field])
+            if weighted and confidence_field in r:
+                confidences.append(r[confidence_field])
+            else:
+                confidences.append(1.0)
+    
+    if not votes:
+        return {"error": f"No votes found for field: {vote_field}"}
+    
+    # Count votes (weighted if requested)
+    if weighted:
+        vote_weights: dict[Any, float] = {}
+        for vote, conf in zip(votes, confidences):
+            key = str(vote)
+            vote_weights[key] = vote_weights.get(key, 0) + conf
+        
+        winner = max(vote_weights.items(), key=lambda x: x[1])
+        total_weight = sum(vote_weights.values())
+        
+        return {
+            vote_field: winner[0] == "True" if winner[0] in ("True", "False") else winner[0],
+            "vote_weights": vote_weights,
+            "total_weight": total_weight,
+            "winner_weight": winner[1],
+            "winner_ratio": winner[1] / total_weight if total_weight else 0,
+        }
+    else:
+        counter = Counter(str(v) for v in votes)
+        total = len(votes)
+        winner, count = counter.most_common(1)[0]
+        
+        return {
+            vote_field: winner == "True" if winner in ("True", "False") else winner,
+            "vote_count": dict(counter),
+            "total_votes": total,
+            "winner_count": count,
+            "winner_ratio": count / total if total else 0,
+            "threshold_met": (count / total) >= vote_threshold if total else False,
+        }
+
+
+def strategy_latest(
+    results: list[dict],
+    timestamp_field: str = "timestamp",
+    **kwargs,
+) -> dict:
+    """Latest strategy: take most recent output per key."""
+    # Sort by timestamp
+    def get_timestamp(r: dict) -> datetime:
+        ts = r.get(timestamp_field, "1970-01-01T00:00:00")
+        try:
+            return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        except Exception:
+            return datetime.min
+    
+    sorted_results = sorted(results, key=get_timestamp, reverse=True)
+    
+    if sorted_results:
+        return sorted_results[0]
+    return {}
+
+
+STRATEGIES: dict[str, Callable] = {
+    "merge": strategy_merge,
+    "concat": strategy_concat,
+    "vote": strategy_vote,
+    "latest": strategy_latest,
+}
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Aggregate results from parallel agents")
+    
+    # Input options
+    parser.add_argument("--input-dir", type=Path, help="Directory containing agent outputs")
+    parser.add_argument("--input-files", nargs="+", type=Path, help="Specific files to aggregate")
+    parser.add_argument("--pattern", default="result.json", help="File pattern to match")
+    
+    # Output options
+    parser.add_argument("--output", "-o", type=Path, required=True, help="Output file path")
+    parser.add_argument("--format", choices=["json", "yaml", "markdown", "csv"], help="Output format (auto-detected from extension)")
+    
+    # Strategy options
+    parser.add_argument("--strategy", "-s", default="merge", choices=list(STRATEGIES.keys()), help="Aggregation strategy")
+    parser.add_argument("--merge-policy", default="last", choices=["last", "first", "concat", "error"], help="Merge conflict policy")
+    parser.add_argument("--concat-separator", default="\n\n", help="Separator for concat strategy")
+    parser.add_argument("--vote-field", default="decision", help="Field to vote on")
+    parser.add_argument("--vote-threshold", type=float, default=0.5, help="Vote threshold for majority")
+    parser.add_argument("--vote-weighted", action="store_true", help="Weight votes by confidence")
+    parser.add_argument("--timestamp-field", default="timestamp", help="Timestamp field for latest strategy")
+    
+    # Error handling
+    parser.add_argument("--allow-partial", action="store_true", help="Allow partial results (some failures)")
+    parser.add_argument("--min-success", type=float, default=0.0, help="Minimum success ratio required")
+    parser.add_argument("--strict", action="store_true", help="Fail if any agent failed")
+    parser.add_argument("--skip-invalid", action="store_true", help="Skip invalid/unparseable files")
+    
+    # Metadata
+    parser.add_argument("--include-provenance", action="store_true", help="Include source info")
+    parser.add_argument("--include-stats", action="store_true", help="Include aggregation statistics")
+    
+    args = parser.parse_args()
+    
+    # Collect input files
+    input_files = []
+    if args.input_files:
+        input_files = args.input_files
+    elif args.input_dir:
+        input_files = find_result_files(args.input_dir, args.pattern)
+    else:
+        print("Error: Must provide --input-dir or --input-files", file=sys.stderr)
+        sys.exit(1)
+    
+    if not input_files:
+        print("Error: No input files found", file=sys.stderr)
+        sys.exit(1)
+    
+    print(f"Found {len(input_files)} result files", file=sys.stderr)
+    
+    # Load results
+    results = []
+    provenance = {}
+    failed_files = []
+    
+    for f in input_files:
+        # Determine file type
+        if f.suffix in (".json",):
+            data = load_json_file(f)
+        else:
+            data = load_text_file(f)
+        
+        if data is not None:
+            results.append(data)
+            if args.include_provenance:
+                # Use parent directory name as agent ID if available
+                agent_id = f.parent.name if f.parent != args.input_dir else f.stem
+                provenance[agent_id] = {
+                    "file": str(f),
+                    "timestamp": datetime.fromtimestamp(f.stat().st_mtime).isoformat(),
+                }
+        else:
+            failed_files.append(str(f))
+            if not args.skip_invalid:
+                print(f"Warning: Failed to load {f}", file=sys.stderr)
+    
+    # Check success ratio
+    total = len(input_files)
+    successful = len(results)
+    success_ratio = successful / total if total else 0
+    
+    if args.strict and failed_files:
+        print(f"Error: {len(failed_files)} files failed to load (strict mode)", file=sys.stderr)
+        sys.exit(1)
+    
+    if success_ratio < args.min_success:
+        print(f"Error: Success ratio {success_ratio:.1%} below minimum {args.min_success:.1%}", file=sys.stderr)
+        sys.exit(1)
+    
+    if not results:
+        print("Error: No valid results to aggregate", file=sys.stderr)
+        sys.exit(1)
+    
+    # Run aggregation
+    start_time = datetime.now()
+    
+    strategy_fn = STRATEGIES[args.strategy]
+    aggregated = strategy_fn(
+        results,
+        merge_policy=args.merge_policy,
+        separator=args.concat_separator,
+        vote_field=args.vote_field,
+        vote_threshold=args.vote_threshold,
+        weighted=args.vote_weighted,
+        timestamp_field=args.timestamp_field,
+    )
+    
+    end_time = datetime.now()
+    
+    # Build final output
+    if args.include_provenance or args.include_stats:
+        if isinstance(aggregated, dict):
+            output = {"data": aggregated}
+        else:
+            output = {"data": str(aggregated)}
+        
+        if args.include_provenance:
+            output["provenance"] = provenance
+        
+        if args.include_stats:
+            output["stats"] = {
+                "total_files": total,
+                "successful": successful,
+                "failed": len(failed_files),
+                "success_ratio": success_ratio,
+                "strategy": args.strategy,
+                "aggregation_time_ms": (end_time - start_time).total_seconds() * 1000,
+                "timestamp": end_time.isoformat(),
+            }
+            if failed_files:
+                output["stats"]["failed_files"] = failed_files
+    else:
+        output = aggregated
+    
+    # Determine output format
+    output_format = args.format
+    if not output_format:
+        suffix = args.output.suffix.lower()
+        format_map = {
+            ".json": "json",
+            ".yaml": "yaml",
+            ".yml": "yaml",
+            ".md": "markdown",
+            ".csv": "csv",
+        }
+        output_format = format_map.get(suffix, "json")
+    
+    # Write output
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    
+    if output_format == "json":
+        args.output.write_text(json.dumps(output, indent=2, default=str))
+    elif output_format == "yaml":
+        import yaml
+        args.output.write_text(yaml.dump(output, default_flow_style=False))
+    elif output_format == "markdown":
+        if isinstance(output, str):
+            args.output.write_text(output)
+        elif isinstance(output, dict) and "data" in output:
+            args.output.write_text(str(output["data"]))
+        else:
+            args.output.write_text(json.dumps(output, indent=2, default=str))
+    elif output_format == "csv":
+        import csv
+        if isinstance(output, list):
+            with open(args.output, "w", newline="") as f:
+                if output and isinstance(output[0], dict):
+                    writer = csv.DictWriter(f, fieldnames=output[0].keys())
+                    writer.writeheader()
+                    writer.writerows(output)
+        else:
+            print("Warning: CSV format requires list output, writing as JSON", file=sys.stderr)
+            args.output.write_text(json.dumps(output, indent=2, default=str))
+    
+    print(f"✓ Aggregated {successful} results to {args.output}", file=sys.stderr)
+    
+    if args.include_stats:
+        print(f"  Strategy: {args.strategy}", file=sys.stderr)
+        print(f"  Success rate: {success_ratio:.1%}", file=sys.stderr)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,158 @@
+{
+  "skill_name": "multi-agent-workflows",
+  "version": "1.0.0",
+  "description": "Evaluation cases for multi-agent local workflow orchestration",
+  "test_cases": [
+    {
+      "id": "parallel-code-analysis",
+      "name": "Parallel Codebase Analysis",
+      "description": "Decompose codebase analysis into parallel subtasks across modules",
+      "prompt": "I need to analyze a large Python codebase for security issues. The codebase has these directories: auth/, api/, database/, and utils/. Each directory is independent. Run the analysis in parallel and combine the results.",
+      "expected_behavior": [
+        "Decomposes task into 4 parallel subtasks (one per directory)",
+        "Selects Docker as default backend for local execution",
+        "Spawns 4 containers with appropriate prompts",
+        "Uses merge aggregation strategy for combining results",
+        "Produces consolidated security report"
+      ],
+      "evaluation_criteria": {
+        "decomposition_correct": "Task split into independent module-based subtasks",
+        "backend_selection": "Docker chosen for local parallelization",
+        "spawn_command_valid": "spawn_docker.py called with correct --tasks",
+        "aggregation_appropriate": "merge strategy used for structured outputs",
+        "result_complete": "All 4 module analyses included in final report"
+      },
+      "difficulty": "medium",
+      "tags": ["decomposition", "docker", "code-analysis", "merge-aggregation"]
+    },
+    {
+      "id": "fan-out-fan-in-refactor",
+      "name": "Phased Refactoring with Dependencies",
+      "description": "Two-phase workflow: analyze first, then refactor based on analysis",
+      "prompt": "Refactor our API layer. First, have agents analyze each endpoint file in parallel. Then, once all analyses complete, have a synthesis agent create a unified refactoring plan based on all the analyses.",
+      "expected_behavior": [
+        "Identifies two-phase workflow requirement",
+        "Phase 1: Spawns parallel analysis agents",
+        "Uses wait_for_phase.py to block until phase 1 completes",
+        "Phase 2: Spawns synthesis agent with --depends-on flag",
+        "Final output references all phase 1 results"
+      ],
+      "evaluation_criteria": {
+        "phases_identified": "Correctly identifies analysis → synthesis dependency",
+        "phase_1_parallel": "Multiple agents spawned for endpoint analysis",
+        "wait_implemented": "wait_for_phase.py used between phases",
+        "phase_2_depends": "Synthesis agent accesses phase 1 outputs",
+        "ordering_correct": "Phase 2 only runs after phase 1 completes"
+      },
+      "difficulty": "hard",
+      "tags": ["fan-out-fan-in", "dependencies", "phased-execution"]
+    },
+    {
+      "id": "test-sharding",
+      "name": "Parallel Test Execution via Sharding",
+      "description": "Shard test files across multiple agents for faster execution",
+      "prompt": "Our test suite has 200 test files and takes 45 minutes to run. Split the tests across 4 parallel agents to speed this up.",
+      "expected_behavior": [
+        "Uses file sharding strategy (200 files / 4 = 50 per agent)",
+        "Generates shards using find + split or similar",
+        "Spawns 4 agents with distinct test file subsets",
+        "Aggregates test results with concat or merge strategy",
+        "Reports combined pass/fail counts"
+      ],
+      "evaluation_criteria": {
+        "sharding_strategy": "Files distributed evenly across agents",
+        "no_overlap": "Each file assigned to exactly one agent",
+        "all_files_covered": "Union of shards equals full test set",
+        "results_aggregated": "Combined test report produced",
+        "time_improvement": "Parallel execution faster than sequential"
+      },
+      "difficulty": "medium",
+      "tags": ["sharding", "testing", "parallelization"]
+    },
+    {
+      "id": "ci-matrix-deployment",
+      "name": "CI Backend with Matrix Strategy",
+      "description": "Use GitHub Actions matrix for parallel multi-environment testing",
+      "prompt": "We need to test our library across Python 3.9, 3.10, 3.11, and 3.12. Set up parallel CI agents for each version.",
+      "expected_behavior": [
+        "Selects CI backend (GitHub Actions)",
+        "Generates workflow with matrix strategy",
+        "Matrix includes all 4 Python versions",
+        "Each matrix job runs independently",
+        "Results aggregated via artifacts"
+      ],
+      "evaluation_criteria": {
+        "backend_ci": "GitHub Actions workflow generated",
+        "matrix_correct": "Matrix includes [3.9, 3.10, 3.11, 3.12]",
+        "parallel_execution": "Jobs run concurrently (parallelism > 1)",
+        "artifact_collection": "Results uploaded as artifacts",
+        "aggregation_job": "Final job combines all results"
+      },
+      "difficulty": "medium",
+      "tags": ["ci", "github-actions", "matrix", "multi-environment"]
+    },
+    {
+      "id": "partial-failure-recovery",
+      "name": "Graceful Handling of Partial Failures",
+      "description": "Continue aggregation when some agents fail",
+      "prompt": "Run 5 parallel data processing agents. If some fail, I still want results from the successful ones. Fail only if more than 60% of agents fail.",
+      "expected_behavior": [
+        "Spawns 5 parallel agents",
+        "Monitors for completion/failure",
+        "Continues after individual failures",
+        "Uses --min-success 0.4 for aggregation",
+        "Reports which agents succeeded/failed"
+      ],
+      "evaluation_criteria": {
+        "spawn_count": "5 agents spawned",
+        "failure_tolerance": "Single failures don't abort workflow",
+        "threshold_correct": "60% failure = 40% min success",
+        "partial_results": "Successful results included in output",
+        "failure_reporting": "Failed agents clearly identified"
+      },
+      "difficulty": "medium",
+      "tags": ["error-handling", "partial-failure", "resilience"]
+    },
+    {
+      "id": "kubernetes-scaling",
+      "name": "Kubernetes Job Scaling",
+      "description": "Scale agents via Kubernetes for large workloads",
+      "prompt": "I have a K8s cluster. Run 10 agents to process a large dataset, splitting it into 10 shards. Use the warp-agents namespace.",
+      "expected_behavior": [
+        "Selects Kubernetes backend",
+        "Uses spawn_k8s.py with --namespace warp-agents",
+        "Creates 10 parallel Jobs",
+        "Each Job processes one data shard",
+        "Collects results from PVC or logs"
+      ],
+      "evaluation_criteria": {
+        "backend_k8s": "Kubernetes selected over Docker",
+        "namespace_correct": "warp-agents namespace used",
+        "job_count": "10 Jobs created",
+        "sharding_applied": "Data split into 10 parts",
+        "result_collection": "Results gathered from cluster"
+      },
+      "difficulty": "hard",
+      "tags": ["kubernetes", "scaling", "sharding", "enterprise"]
+    }
+  ],
+  "evaluation_metrics": {
+    "decomposition_accuracy": "How well tasks are split into independent subtasks",
+    "backend_appropriateness": "Selection of correct backend for the scenario",
+    "spawn_correctness": "Valid spawn commands with proper parameters",
+    "aggregation_strategy": "Appropriate result merging approach",
+    "error_handling": "Graceful handling of failures and edge cases",
+    "documentation_reference": "Correct references to backend-specific docs"
+  },
+  "scoring": {
+    "pass_threshold": 0.8,
+    "weights": {
+      "decomposition_accuracy": 0.25,
+      "backend_appropriateness": 0.15,
+      "spawn_correctness": 0.25,
+      "aggregation_strategy": 0.15,
+      "error_handling": 0.1,
+      "documentation_reference": 0.1
+    }
+  }
+}
