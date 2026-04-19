@@ -1,0 +1,110 @@
+name: Test Multi-Agent Workflows
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      
+      - name: Install linters
+        run: pip install ruff black
+      
+      - name: Run ruff
+        run: ruff check scripts/ tests/
+      
+      - name: Check formatting
+        run: black --check scripts/ tests/
+
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      
+      - name: Install dependencies
+        run: |
+          pip install pytest pytest-cov
+      
+      - name: Run tests
+        run: |
+          pytest tests/ -v --cov=scripts --cov-report=xml --cov-report=term-missing
+      
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.xml
+          fail_ci_if_error: false
+
+  eval-dry-run:
+    name: Eval Dry Run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      
+      - name: Run evals (dry-run)
+        run: |
+          python3 scripts/run_evals.py --dry-run --verbose
+      
+      - name: Run evals (JSON output)
+        run: |
+          python3 scripts/run_evals.py --dry-run --json > eval-results.json
+          cat eval-results.json
+      
+      - name: Upload eval results
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-results
+          path: eval-results.json
+
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [lint, unit-tests, eval-dry-run]
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      
+      - name: Test spawn_docker.py help
+        run: |
+          python3 scripts/spawn_docker.py --help
+      
+      - name: Test aggregate_results.py help
+        run: |
+          python3 scripts/aggregate_results.py --help
+      
+      - name: Test wait_for_phase.py help
+        run: |
+          python3 scripts/wait_for_phase.py --help
+      
+      - name: Verify Docker available
+        run: docker info
+      
+      # Full integration tests would go here with actual container spawning
+      # Skipped by default to avoid API key requirements
