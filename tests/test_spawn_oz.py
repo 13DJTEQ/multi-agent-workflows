@@ -1,9 +1,8 @@
 """Tests for scripts/spawn_oz.py."""
+
 from __future__ import annotations
 
-import json
 import subprocess
-from unittest import mock
 
 import pytest
 
@@ -129,9 +128,7 @@ class TestPollRun:
 
 class TestWaitForRun:
     def test_terminal_state_captured(self, monkeypatch):
-        r = spawn_oz.OzAgentResult(
-            task_id="t1", task="x", run_id="abc", status="running", start_time=1.0
-        )
+        r = spawn_oz.OzAgentResult(task_id="t1", task="x", run_id="abc", status="running", start_time=1.0)
 
         def fake_poll(run_id):
             return {
@@ -148,9 +145,7 @@ class TestWaitForRun:
         assert result.end_time is not None
 
     def test_non_terminal_times_out(self, monkeypatch):
-        r = spawn_oz.OzAgentResult(
-            task_id="t1", task="x", run_id="abc", status="running", start_time=1.0
-        )
+        r = spawn_oz.OzAgentResult(task_id="t1", task="x", run_id="abc", status="running", start_time=1.0)
 
         def fake_poll(run_id):
             return {"status": "running"}
@@ -166,9 +161,14 @@ class TestWaitForRun:
 class TestToEnvelope:
     def test_succeeded_maps_to_ok(self):
         r = spawn_oz.OzAgentResult(
-            task_id="t1", task="x", run_id="abc",
-            status="succeeded", start_time=1.0, end_time=3.5,
-            output="done", pr_url="https://github.com/a/b/pull/1",
+            task_id="t1",
+            task="x",
+            run_id="abc",
+            status="succeeded",
+            start_time=1.0,
+            end_time=3.5,
+            output="done",
+            pr_url="https://github.com/a/b/pull/1",
         )
         env = r.to_envelope()
         assert env["schema_version"] == "1"
@@ -180,7 +180,11 @@ class TestToEnvelope:
 
     def test_failed_maps_to_failed(self):
         r = spawn_oz.OzAgentResult(
-            task_id="t1", task="x", run_id="", status="failed", error="boom",
+            task_id="t1",
+            task="x",
+            run_id="",
+            status="failed",
+            error="boom",
         )
         env = r.to_envelope()
         assert env["status"] == "failed"

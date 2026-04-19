@@ -1,7 +1,7 @@
 """Tests for scripts/credential_helper.py."""
+
 from __future__ import annotations
 
-import os
 import subprocess
 import sys
 from unittest import mock
@@ -140,9 +140,7 @@ class TestOzSecretBackend:
         def fake_run(cmd, **kwargs):
             cmds.append(cmd)
             if cmd[2] == "create":
-                raise subprocess.CalledProcessError(
-                    1, cmd, stderr="Error: secret already exists"
-                )
+                raise subprocess.CalledProcessError(1, cmd, stderr="Error: secret already exists")
             return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
         monkeypatch.setattr(subprocess, "run", fake_run)

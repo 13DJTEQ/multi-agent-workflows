@@ -9,22 +9,25 @@ Usage:
 
 import argparse
 import json
-import os
 import subprocess
 import sys
 import time
-import yaml
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+import yaml
+
 # Structured logging (optional; degrades gracefully if unavailable)
 try:
-    from scripts._log import configure as _log_configure, log_event, add_log_format_arg  # type: ignore
+    from scripts._log import add_log_format_arg, log_event
+    from scripts._log import configure as _log_configure  # type: ignore
 except ImportError:
     try:
-        from ._log import configure as _log_configure, log_event, add_log_format_arg  # type: ignore
+        from ._log import add_log_format_arg, log_event
+        from ._log import configure as _log_configure  # type: ignore
     except ImportError:
+
         def _log_configure(*_a, **_k): ...
         def log_event(*_a, **_k): ...
         def add_log_format_arg(_p): ...
@@ -62,30 +65,38 @@ def create_job_manifest(
     share: str,
 ) -> dict:
     """Create a Kubernetes Job manifest."""
-    
+
     volumes = []
     volume_mounts = []
-    
+
     if pvc_name:
-        volumes.append({
-            "name": "workspace",
-            "persistentVolumeClaim": {"claimName": pvc_name},
-        })
-        volume_mounts.append({
-            "name": "workspace",
-            "mountPath": "/workspace",
-        })
-    
+        volumes.append(
+            {
+                "name": "workspace",
+                "persistentVolumeClaim": {"claimName": pvc_name},
+            }
+        )
+        volume_mounts.append(
+            {
+                "name": "workspace",
+                "mountPath": "/workspace",
+            }
+        )
+
     # Output volume (emptyDir)
-    volumes.append({
-        "name": "output",
-        "emptyDir": {},
-    })
-    volume_mounts.append({
-        "name": "output",
-        "mountPath": "/output",
-    })
-    
+    volumes.append(
+        {
+            "name": "output",
+            "emptyDir": {},
+        }
+    )
+    volume_mounts.append(
+        {
+            "name": "output",
+            "mountPath": "/output",
+        }
+    )
+
     manifest = {
         "apiVersion": "batch/v1",
         "kind": "Job",
@@ -109,52 +120,56 @@ def create_job_manifest(
                 },
                 "spec": {
                     "restartPolicy": "Never",
-                    "containers": [{
-                        "name": "agent",
-                        "image": image,
-                        "workingDir": "/workspace" if pvc_name else "/tmp",
-                        "command": ["oz", "agent", "run"],
-                        "args": [
-                            "--prompt", f"{task}. Save results to /output/result.json",
-                            "--share", share,
-                        ],
-                        "env": [
-                            {
-                                "name": "WARP_API_KEY",
-                                "valueFrom": {
-                                    "secretKeyRef": {
-                                        "name": secret_name,
-                                        "key": "WARP_API_KEY",
+                    "containers": [
+                        {
+                            "name": "agent",
+                            "image": image,
+                            "workingDir": "/workspace" if pvc_name else "/tmp",
+                            "command": ["oz", "agent", "run"],
+                            "args": [
+                                "--prompt",
+                                f"{task}. Save results to /output/result.json",
+                                "--share",
+                                share,
+                            ],
+                            "env": [
+                                {
+                                    "name": "WARP_API_KEY",
+                                    "valueFrom": {
+                                        "secretKeyRef": {
+                                            "name": secret_name,
+                                            "key": "WARP_API_KEY",
+                                        },
                                     },
                                 },
+                                {
+                                    "name": "TASK_ID",
+                                    "value": job_name,
+                                },
+                                {
+                                    "name": "OUTPUT_DIR",
+                                    "value": "/output",
+                                },
+                            ],
+                            "volumeMounts": volume_mounts,
+                            "resources": {
+                                "requests": {
+                                    "memory": memory_request,
+                                    "cpu": cpu_request,
+                                },
+                                "limits": {
+                                    "memory": memory_limit,
+                                    "cpu": cpu_limit,
+                                },
                             },
-                            {
-                                "name": "TASK_ID",
-                                "value": job_name,
-                            },
-                            {
-                                "name": "OUTPUT_DIR",
-                                "value": "/output",
-                            },
-                        ],
-                        "volumeMounts": volume_mounts,
-                        "resources": {
-                            "requests": {
-                                "memory": memory_request,
-                                "cpu": cpu_request,
-                            },
-                            "limits": {
-                                "memory": memory_limit,
-                                "cpu": cpu_limit,
-                            },
-                        },
-                    }],
+                        }
+                    ],
                     "volumes": volumes,
                 },
             },
         },
     }
-    
+
     return manifest
 
 
@@ -178,16 +193,21 @@ def get_job_status(job_name: str, namespace: str) -> str:
     try:
         result = subprocess.run(
             [
-                "kubectl", "get", "job", job_name,
-                "-n", namespace,
-                "-o", "jsonpath={.status.conditions[?(@.type=='Complete')].status},{.status.conditions[?(@.type=='Failed')].status},{.status.active}",
+                "kubectl",
+                "get",
+                "job",
+                job_name,
+                "-n",
+                namespace,
+                "-o",
+                "jsonpath={.status.conditions[?(@.type=='Complete')].status},{.status.conditions[?(@.type=='Failed')].status},{.status.active}",
             ],
             capture_output=True,
             text=True,
             check=True,
         )
         complete, failed, active = result.stdout.split(",")
-        
+
         if complete == "True":
             return "completed"
         elif failed == "True":
@@ -261,7 +281,7 @@ def main():
         format=getattr(args, "log_format", "text"),
         flush_each=getattr(args, "log_flush_each", False),
     )
-    
+
     # Get tasks
     tasks = []
     if args.tasks:
@@ -271,23 +291,23 @@ def main():
     else:
         print("Error: Must provide --tasks or --tasks-file", file=sys.stderr)
         sys.exit(1)
-    
+
     # Create namespace if it doesn't exist
     if not args.dry_run:
         subprocess.run(
             ["kubectl", "create", "namespace", args.namespace],
             capture_output=True,
         )
-    
+
     # Create and apply jobs
     results: list[JobResult] = []
 
     print(f"Creating {len(tasks)} Kubernetes Jobs...", file=sys.stderr)
     log_event("spawn.start", backend="k8s", tasks=len(tasks), namespace=args.namespace)
-    
+
     for i, task in enumerate(tasks):
         job_name = generate_job_name(task, i)
-        
+
         manifest = create_job_manifest(
             task=task,
             job_name=job_name,
@@ -301,47 +321,55 @@ def main():
             cpu_limit=args.cpu_limit,
             share=args.share,
         )
-        
+
         if args.dry_run:
             print("---")
             print(yaml.dump(manifest))
-            results.append(JobResult(
-                task_id=job_name,
-                task=task,
-                job_name=job_name,
-                status="dry-run",
-            ))
+            results.append(
+                JobResult(
+                    task_id=job_name,
+                    task=task,
+                    job_name=job_name,
+                    status="dry-run",
+                )
+            )
         else:
             success, output = apply_manifest(manifest)
             if success:
                 print(f"✓ Created: {job_name} ({task[:50]}...)", file=sys.stderr)
                 log_event("spawn.container.started", backend="k8s", task_id=job_name, namespace=args.namespace)
-                results.append(JobResult(
-                    task_id=job_name,
-                    task=task,
-                    job_name=job_name,
-                    status="pending",
-                ))
+                results.append(
+                    JobResult(
+                        task_id=job_name,
+                        task=task,
+                        job_name=job_name,
+                        status="pending",
+                    )
+                )
             else:
                 print(f"✗ Failed to create: {job_name} - {output}", file=sys.stderr)
-                log_event("spawn.container.started", backend="k8s", task_id=job_name, status="failed", error=output[:200])
-                results.append(JobResult(
-                    task_id=job_name,
-                    task=task,
-                    job_name=job_name,
-                    status="failed",
-                    error=output,
-                ))
-    
+                log_event(
+                    "spawn.container.started", backend="k8s", task_id=job_name, status="failed", error=output[:200]
+                )
+                results.append(
+                    JobResult(
+                        task_id=job_name,
+                        task=task,
+                        job_name=job_name,
+                        status="failed",
+                        error=output,
+                    )
+                )
+
     # Wait for completion if requested
     if args.wait and not args.dry_run:
         print("\nWaiting for jobs to complete...", file=sys.stderr)
-        
+
         for result in results:
             if result.status == "pending":
                 status = wait_for_job(result.job_name, args.namespace, args.timeout)
                 result.status = status
-                
+
                 if status == "completed":
                     print(f"✓ Completed: {result.job_name}", file=sys.stderr)
                     log_event("spawn.container.completed", backend="k8s", task_id=result.job_name, status="completed")
@@ -351,7 +379,7 @@ def main():
                 else:
                     print(f"✗ Failed: {result.job_name}", file=sys.stderr)
                     log_event("spawn.container.completed", backend="k8s", task_id=result.job_name, status="failed")
-    
+
     # Output results
     if args.json:
         output = {
@@ -374,14 +402,14 @@ def main():
         }
         print(json.dumps(output, indent=2))
     elif not args.dry_run:
-        print(f"\nSummary:", file=sys.stderr)
+        print("\nSummary:", file=sys.stderr)
         print(f"  Namespace: {args.namespace}", file=sys.stderr)
         print(f"  Total: {len(results)}", file=sys.stderr)
         print(f"  Pending: {sum(1 for r in results if r.status == 'pending')}", file=sys.stderr)
         print(f"  Running: {sum(1 for r in results if r.status == 'running')}", file=sys.stderr)
         print(f"  Completed: {sum(1 for r in results if r.status == 'completed')}", file=sys.stderr)
         print(f"  Failed: {sum(1 for r in results if r.status == 'failed')}", file=sys.stderr)
-        
+
         print("\nMonitor with:", file=sys.stderr)
         print(f"  kubectl get jobs -n {args.namespace} -l app=warp-agent -w", file=sys.stderr)
 

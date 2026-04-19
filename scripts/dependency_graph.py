@@ -36,6 +36,7 @@ Optimized ordering:
     - Tasks are topologically sorted; within a phase, they're sorted by id
       for deterministic output.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -63,8 +64,10 @@ def load_manifest(path: Path) -> list[Task]:
     if path.suffix in {".yaml", ".yml"}:
         try:
             import yaml
-        except ImportError:
-            raise RuntimeError("YAML support requires `pip install pyyaml`. Convert to JSON or install pyyaml.")
+        except ImportError as exc:
+            raise RuntimeError(
+                "YAML support requires `pip install pyyaml`. Convert to JSON or install pyyaml."
+            ) from exc
         data = yaml.safe_load(text)
     else:
         data = json.loads(text)
@@ -204,7 +207,7 @@ def format_dot(tasks: list[Task], phases: list[list[Task]]) -> str:
         lines.append(f'    label="Phase {i}";')
         lines.append("    style=dashed;")
         for t in phase:
-            label = f'{t.id}\\n{t.prompt[:40]}'
+            label = f"{t.id}\\n{t.prompt[:40]}"
             lines.append(f'    "{t.id}" [label="{label}"];')
         lines.append("  }")
     # Edges

@@ -1,4 +1,5 @@
 """Tests for scripts/schema_validator.py + --validate-schema integration."""
+
 from __future__ import annotations
 
 import json
@@ -6,10 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
-
 from scripts import schema_validator as sv
-
 
 VALID = {
     "schema_version": "1",
@@ -45,9 +43,7 @@ class TestBuiltinValidator:
         assert any("JSON object" in e for e in errs)
 
     def test_bad_metrics_type(self):
-        errs = sv._builtin_validate(
-            {"schema_version": "1", "status": "ok", "metrics": "not-a-dict"}
-        )
+        errs = sv._builtin_validate({"schema_version": "1", "status": "ok", "metrics": "not-a-dict"})
         assert any("metrics must be an object" in e for e in errs)
 
     def test_extra_fields_allowed(self):
@@ -128,10 +124,15 @@ class TestAggregateValidateSchemaIntegration:
 
         proc = subprocess.run(
             [
-                sys.executable, "-m", "scripts.aggregate_results",
-                "--input-dir", str(out),
-                "--output", str(report),
-                "--strategy", "merge",
+                sys.executable,
+                "-m",
+                "scripts.aggregate_results",
+                "--input-dir",
+                str(out),
+                "--output",
+                str(report),
+                "--strategy",
+                "merge",
                 "--validate-schema",
                 "--include-stats",
             ],
@@ -152,10 +153,15 @@ class TestAggregateValidateSchemaIntegration:
 
         proc = subprocess.run(
             [
-                sys.executable, "-m", "scripts.aggregate_results",
-                "--input-dir", str(out),
-                "--output", str(report),
-                "--strategy", "merge",
+                sys.executable,
+                "-m",
+                "scripts.aggregate_results",
+                "--input-dir",
+                str(out),
+                "--output",
+                str(report),
+                "--strategy",
+                "merge",
                 "--validate-schema",
             ],
             capture_output=True,

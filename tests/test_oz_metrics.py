@@ -6,10 +6,10 @@ Covers:
 - `to_envelope` includes metrics in result-schema envelope
 - `_rollup_metrics` sums totals and builds per-model breakdown
 """
+
 from __future__ import annotations
 
-from scripts import spawn_oz
-from scripts import aggregate_results
+from scripts import aggregate_results, spawn_oz
 
 
 class TestExtractMetricsFromOz:
@@ -54,9 +54,7 @@ class TestExtractMetricsFromOz:
 
 class TestWaitForRunPopulatesMetrics:
     def test_populates_fields_on_success(self, monkeypatch):
-        r = spawn_oz.OzAgentResult(
-            task_id="t1", task="x", run_id="abc", status="running", start_time=1.0
-        )
+        r = spawn_oz.OzAgentResult(task_id="t1", task="x", run_id="abc", status="running", start_time=1.0)
 
         def fake_poll(run_id):
             return {
@@ -93,9 +91,7 @@ class TestEnvelopeIncludesMetrics:
         assert env["metrics"]["duration_seconds"] == 2.0
 
     def test_envelope_omits_metrics_when_empty(self):
-        r = spawn_oz.OzAgentResult(
-            task_id="t1", task="x", run_id="abc", status="running"
-        )
+        r = spawn_oz.OzAgentResult(task_id="t1", task="x", run_id="abc", status="running")
         env = r.to_envelope()
         assert "metrics" not in env
 

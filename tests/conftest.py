@@ -1,10 +1,8 @@
 """Shared pytest fixtures for multi-agent-workflows tests."""
 
 import json
-import os
 import sys
 from pathlib import Path
-from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -44,7 +42,7 @@ def sample_json_results(tmp_outputs):
         {"module": "api", "score": 92, "issues": []},
         {"module": "db", "score": 78, "issues": ["missing indexes"]},
     ]
-    
+
     paths = []
     for i, result in enumerate(results):
         agent_dir = tmp_outputs / f"agent-{i}"
@@ -52,7 +50,7 @@ def sample_json_results(tmp_outputs):
         result_file = agent_dir / "result.json"
         result_file.write_text(json.dumps(result))
         paths.append(result_file)
-    
+
     return paths
 
 
@@ -64,7 +62,7 @@ def sample_vote_results(tmp_outputs):
         {"decision": True, "confidence": 0.92},
         {"decision": False, "confidence": 0.78},
     ]
-    
+
     paths = []
     for i, result in enumerate(results):
         agent_dir = tmp_outputs / f"voter-{i}"
@@ -72,19 +70,20 @@ def sample_vote_results(tmp_outputs):
         result_file = agent_dir / "result.json"
         result_file.write_text(json.dumps(result))
         paths.append(result_file)
-    
+
     return paths
 
 
 @pytest.fixture
 def mock_subprocess_docker_success():
     """Mock subprocess for successful Docker operations."""
+
     def _mock_run(cmd, **kwargs):
         mock_result = MagicMock()
         mock_result.returncode = 0
         mock_result.stdout = ""
         mock_result.stderr = ""
-        
+
         if cmd[0] == "docker":
             if cmd[1] == "run":
                 mock_result.stdout = "abc123container456"
@@ -94,25 +93,26 @@ def mock_subprocess_docker_success():
                 mock_result.stdout = "agent-1-task\nagent-2-task"
             elif cmd[1] == "inspect":
                 mock_result.stdout = "exited,0,2024-01-01T10:00:00Z,2024-01-01T10:05:00Z"
-        
+
         return mock_result
-    
+
     return _mock_run
 
 
 @pytest.fixture
 def mock_subprocess_docker_failure():
     """Mock subprocess for failed Docker operations."""
+
     def _mock_run(cmd, **kwargs):
         mock_result = MagicMock()
         mock_result.returncode = 1
         mock_result.stdout = ""
         mock_result.stderr = "Container failed to start"
-        
+
         if cmd[0] == "docker":
             if cmd[1] == "wait":
                 mock_result.stdout = "1"
-        
+
         return mock_result
-    
+
     return _mock_run

@@ -5,7 +5,15 @@ All notable changes to the **multi-agent-workflows** skill are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.1.0] — 2026-04-19
+## [Unreleased]
+Phase 7 (scalability/perf). Work-in-progress release; numbers finalized at v1.2.0.
+### Added
+- **Streaming aggregation** (phase 7 P1-A) — `scripts/aggregate_results.py` now loads input files through `iter_loaded_files` (bounded-window `ThreadPoolExecutor`) and folds the merge/concat accumulators directly over the stream. The pre-existing `list(executor.map(load_file, files))` materialization is gone. `_IncrementalRollup` accumulates metrics inline during the load so `--include-stats` no longer requires a second pass.
+- **`--max-memory-mb`** flag on `aggregate_results.py` — per-envelope `data` payloads that serialize above the budget are replaced with `{artifact_path, artifact_size}` pointers per `references/result-schema.md` "Non-envelope outputs". The envelope itself is never mutated; the pointer is written to a shallow copy. Spill count surfaces as `stats.spilled_payloads` and a new `aggregate.spill` structured-log event.
+- **`--load-workers`** flag to control the streaming loader concurrency (default 8).
+- **Bench scenario** `bench/test_streaming_aggregation.py` — measures disk-backed merge throughput and peak memory for materialized vs streaming at 1k/10k. Memory numbers landed in `bench/RESULTS.md`.
+### Changed
+- `merge_dicts` / `strategy_merge` / `strategy_concat` / `_rollup_metrics` now accept any `Iterable`. List callers are unaffected (semantically identical for `last`/`first`/`concat`/`error` policies); generator callers work without a materialization step.
 Phase 6: cloud-native orchestration + production hardening.
 ### Added
 - **`spawn_oz.py`** (P0-A) — cloud-agent backend using `oz agent run-cloud`; required `--environment`; fire-and-forget by default with opt-in `--wait` polling; captures PR/branch artifacts from agent output; new `maw-spawn-oz` entry point.

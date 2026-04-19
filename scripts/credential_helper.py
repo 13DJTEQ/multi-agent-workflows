@@ -31,6 +31,7 @@ Design:
     - Service name defaults to 'multi-agent-workflows' but is configurable
       via --service / MAW_CRED_SERVICE so users can namespace secrets.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -41,7 +42,6 @@ import subprocess
 import sys
 from abc import ABC, abstractmethod
 from typing import Optional
-
 
 DEFAULT_SERVICE = os.environ.get("MAW_CRED_SERVICE", "multi-agent-workflows")
 
@@ -145,17 +145,17 @@ class OnePasswordBackend(CredentialBackend):
                 check=True,
             )
             return out.stdout.rstrip("\n")
-        except FileNotFoundError:
-            raise RuntimeError("`op` CLI not found. Install 1Password CLI: https://developer.1password.com/docs/cli/")
+        except FileNotFoundError as exc:
+            raise RuntimeError(
+                "`op` CLI not found. Install 1Password CLI: https://developer.1password.com/docs/cli/"
+            ) from exc
         except subprocess.CalledProcessError as e:
             if "isn't an item" in (e.stderr or "") or "not found" in (e.stderr or "").lower():
                 return None
             raise
 
     def set(self, key: str, value: str, service: str = DEFAULT_SERVICE) -> None:
-        raise NotImplementedError(
-            "1Password write is not implemented. Create items manually or use `op item create`."
-        )
+        raise NotImplementedError("1Password write is not implemented. Create items manually or use `op item create`.")
 
 
 class VaultBackend(CredentialBackend):
@@ -248,18 +248,16 @@ class OzSecretBackend(CredentialBackend):
                 check=True,
                 capture_output=True,
             )
-        except FileNotFoundError:
+        except FileNotFoundError as exc:
             raise RuntimeError(
                 "`oz` CLI not found. Install Warp's Oz CLI: https://docs.warp.dev/reference/cli"
-            )
+            ) from exc
         except subprocess.CalledProcessError as e:
             stderr = (e.stderr or "").strip()
             # If secret exists, transparently update.
             if "already exists" in stderr.lower() or "conflict" in stderr.lower():
                 update_cmd = ["oz", "secret", "update", key]
-                subprocess.run(
-                    update_cmd, input=value, text=True, check=True, capture_output=True
-                )
+                subprocess.run(update_cmd, input=value, text=True, check=True, capture_output=True)
                 return
             raise
 
@@ -271,8 +269,8 @@ class OzSecretBackend(CredentialBackend):
                 capture_output=True,
                 text=True,
             )
-        except FileNotFoundError:
-            raise RuntimeError("`oz` CLI not found.")
+        except FileNotFoundError as exc:
+            raise RuntimeError("`oz` CLI not found.") from exc
 
     def list_secrets(self) -> list[str]:
         """Return the names of secrets stored in Oz (value is NOT returned)."""
@@ -283,8 +281,8 @@ class OzSecretBackend(CredentialBackend):
                 text=True,
                 check=True,
             )
-        except FileNotFoundError:
-            raise RuntimeError("`oz` CLI not found.")
+        except FileNotFoundError as exc:
+            raise RuntimeError("`oz` CLI not found.") from exc
         import json as _json
 
         try:

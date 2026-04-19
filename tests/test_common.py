@@ -1,4 +1,5 @@
 """Tests for scripts/_common.py."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -77,9 +78,9 @@ class TestCheckCircuitBreakerCounters:
             results = [_R("failed")] * failed + [_R("ok")] * (total - failed)
             list_out = _common.check_circuit_breaker(results, threshold, min_samples)
             counter_out = _common.check_circuit_breaker_counters(failed, total, threshold, min_samples)
-            assert list_out == counter_out, (
-                f"mismatch: list={list_out} counter={counter_out} for {(failed, total, threshold, min_samples)}"
-            )
+            assert (
+                list_out == counter_out
+            ), f"mismatch: list={list_out} counter={counter_out} for {(failed, total, threshold, min_samples)}"
 
 
 class TestValidateTasksFile:

@@ -17,7 +17,7 @@ import subprocess
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
@@ -33,14 +33,18 @@ except ImportError:
 
 # Structured logging (optional; degrades gracefully if unavailable)
 try:
-    from scripts._log import configure as _log_configure, log_event, add_log_format_arg  # type: ignore
+    from scripts._log import add_log_format_arg, log_event
+    from scripts._log import configure as _log_configure  # type: ignore
 except ImportError:
     try:
-        from ._log import configure as _log_configure, log_event, add_log_format_arg  # type: ignore
+        from ._log import add_log_format_arg, log_event
+        from ._log import configure as _log_configure  # type: ignore
     except ImportError:
+
         def _log_configure(*_a, **_k): ...
         def log_event(*_a, **_k): ...
         def add_log_format_arg(_p): ...
+
 
 # Preflight thresholds
 MIN_FREE_DISK_MB = 500  # warn if output dir has less than this
@@ -50,6 +54,7 @@ DOCKER_DAEMON_TIMEOUT_SEC = 5
 @dataclass
 class AgentResult:
     """Result of spawning or completing an agent container."""
+
     task_id: str
     task: str
     container_id: str
@@ -59,7 +64,7 @@ class AgentResult:
     retries: int = 0
     start_time: Optional[float] = None
     end_time: Optional[float] = None
-    
+
     @property
     def duration_seconds(self) -> Optional[float]:
         """Calculate task duration if both times are set."""
@@ -92,49 +97,64 @@ def spawn_container(
     docker_args: Optional[str] = None,
 ) -> AgentResult:
     """Spawn a single Docker container for an agent task."""
-    
+
     # Create output directory for this task
     task_output = output_dir / task_id
     task_output.mkdir(parents=True, exist_ok=True)
-    
+
     # Build docker command
     cmd = [
-        "docker", "run", "-d",
-        "--name", task_id,
-        "-v", f"{workspace}:/workspace",
-        "-v", f"{task_output}:/output",
-        "-w", "/workspace",
-        "-e", f"WARP_API_KEY={api_key}",
-        "-e", f"TASK_ID={task_id}",
-        "-e", "OUTPUT_DIR=/output",
+        "docker",
+        "run",
+        "-d",
+        "--name",
+        task_id,
+        "-v",
+        f"{workspace}:/workspace",
+        "-v",
+        f"{task_output}:/output",
+        "-w",
+        "/workspace",
+        "-e",
+        f"WARP_API_KEY={api_key}",
+        "-e",
+        f"TASK_ID={task_id}",
+        "-e",
+        "OUTPUT_DIR=/output",
     ]
-    
+
     # Add extra environment variables
     for key, value in extra_env.items():
         cmd.extend(["-e", f"{key}={value}"])
-    
+
     # Resource limits
     if memory:
         cmd.extend(["--memory", memory])
     if cpus:
         cmd.extend(["--cpus", cpus])
-    
+
     # Network
     if network:
         cmd.extend(["--network", network])
-    
+
     # Extra Docker arguments
     if docker_args:
         cmd.extend(shlex.split(docker_args))
-    
+
     # Image and command
     cmd.append(image)
-    cmd.extend([
-        "oz", "agent", "run",
-        "--prompt", f"{task}. Save results to /output/result.json",
-        "--share", share,
-    ])
-    
+    cmd.extend(
+        [
+            "oz",
+            "agent",
+            "run",
+            "--prompt",
+            f"{task}. Save results to /output/result.json",
+            "--share",
+            share,
+        ]
+    )
+
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         container_id = result.stdout.strip()
@@ -179,7 +199,7 @@ def wait_for_container(task_id: str, timeout: int = 3600) -> tuple[int, str]:
 
 def calculate_backoff(retry: int, base_delay: float = 2.0, max_delay: float = 60.0) -> float:
     """Calculate exponential backoff delay with jitter."""
-    delay = min(base_delay * (2 ** retry), max_delay)
+    delay = min(base_delay * (2**retry), max_delay)
     jitter = delay * 0.1 * random.random()
     return delay + jitter
 
@@ -214,7 +234,10 @@ def check_disk_space(path: Path, min_free_mb: int = MIN_FREE_DISK_MB) -> tuple[b
         stat = shutil.disk_usage(path)
         free_mb = stat.free // (1024 * 1024)
         if free_mb < min_free_mb:
-            return False, f"Only {free_mb}MB free at {path} (need >= {min_free_mb}MB). Clear disk or choose another --output-dir."
+            return (
+                False,
+                f"Only {free_mb}MB free at {path} (need >= {min_free_mb}MB). Clear disk or choose another --output-dir.",
+            )
         return True, f"{free_mb}MB free at {path}"
     except OSError as e:
         if "No space left" in str(e):
@@ -310,38 +333,73 @@ Examples:
   %(prog)s --tasks "Run linter" --docker-args "--gpus all" --memory 8g
 """,
     )
-    
+
     # Task input (mutually exclusive)
     task_group = parser.add_argument_group("Task Input (one required)")
     task_group.add_argument("--tasks", nargs="+", metavar="PROMPT", help="Task prompts to execute")
-    task_group.add_argument("--tasks-file", type=Path, metavar="FILE", help="File with tasks (one per line, # comments allowed)")
-    
+    task_group.add_argument(
+        "--tasks-file", type=Path, metavar="FILE", help="File with tasks (one per line, # comments allowed)"
+    )
+
     # Container configuration
     container_group = parser.add_argument_group("Container Configuration")
-    container_group.add_argument("--image", default="warpdotdev/dev-base:latest", help="Docker image (default: %(default)s)")
-    container_group.add_argument("--workspace", type=Path, default=Path.cwd(), metavar="DIR", help="Workspace directory to mount")
-    container_group.add_argument("--output-dir", type=Path, default=Path("./outputs"), metavar="DIR", help="Output directory (default: %(default)s)")
+    container_group.add_argument(
+        "--image", default="warpdotdev/dev-base:latest", help="Docker image (default: %(default)s)"
+    )
+    container_group.add_argument(
+        "--workspace", type=Path, default=Path.cwd(), metavar="DIR", help="Workspace directory to mount"
+    )
+    container_group.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("./outputs"),
+        metavar="DIR",
+        help="Output directory (default: %(default)s)",
+    )
     container_group.add_argument("--memory", default="4g", help="Memory limit per container (default: %(default)s)")
     container_group.add_argument("--cpus", default="2", help="CPU limit per container (default: %(default)s)")
     container_group.add_argument("--network", metavar="NAME", help="Docker network name")
     container_group.add_argument("--docker-args", metavar="ARGS", help="Extra Docker run arguments (quoted string)")
     container_group.add_argument("--env", nargs="+", metavar="KEY=VALUE", help="Extra environment variables")
-    
+
     # Execution control
     exec_group = parser.add_argument_group("Execution Control")
-    exec_group.add_argument("--parallel", type=int, default=4, metavar="N", help="Max parallel containers (default: %(default)s)")
-    exec_group.add_argument("--timeout", type=int, default=3600, metavar="SEC", help="Timeout per task in seconds (default: %(default)s)")
+    exec_group.add_argument(
+        "--parallel", type=int, default=4, metavar="N", help="Max parallel containers (default: %(default)s)"
+    )
+    exec_group.add_argument(
+        "--timeout", type=int, default=3600, metavar="SEC", help="Timeout per task in seconds (default: %(default)s)"
+    )
     exec_group.add_argument("--phase", metavar="ID", help="Phase identifier for multi-phase workflows")
-    exec_group.add_argument("--share", default="team", choices=["team", "public", "private"], help="Session sharing mode (default: %(default)s)")
-    
+    exec_group.add_argument(
+        "--share",
+        default="team",
+        choices=["team", "public", "private"],
+        help="Session sharing mode (default: %(default)s)",
+    )
+
     # Fault tolerance
     fault_group = parser.add_argument_group("Fault Tolerance")
-    fault_group.add_argument("--circuit-breaker", type=float, default=0.5, metavar="RATIO", help="Stop if failure rate exceeds threshold (default: %(default)s)")
+    fault_group.add_argument(
+        "--circuit-breaker",
+        type=float,
+        default=0.5,
+        metavar="RATIO",
+        help="Stop if failure rate exceeds threshold (default: %(default)s)",
+    )
     fault_group.add_argument("--retry-failed", action="store_true", help="Retry failed tasks with exponential backoff")
-    fault_group.add_argument("--max-retries", type=int, default=3, metavar="N", help="Max retries per task (default: %(default)s)")
-    fault_group.add_argument("--skip-preflight", action="store_true", help="Skip docker/disk preflight checks (not recommended)")
-    fault_group.add_argument("--credential-backend", choices=["env", "keychain", "1password", "vault", "aws", "oz"], help="Backend for resolving WARP_API_KEY (default: env then keychain; use `env` inside Oz cloud agents)")
-    
+    fault_group.add_argument(
+        "--max-retries", type=int, default=3, metavar="N", help="Max retries per task (default: %(default)s)"
+    )
+    fault_group.add_argument(
+        "--skip-preflight", action="store_true", help="Skip docker/disk preflight checks (not recommended)"
+    )
+    fault_group.add_argument(
+        "--credential-backend",
+        choices=["env", "keychain", "1password", "vault", "aws", "oz"],
+        help="Backend for resolving WARP_API_KEY (default: env then keychain; use `env` inside Oz cloud agents)",
+    )
+
     # Output options
     out_group = parser.add_argument_group("Output")
     out_group.add_argument("--wait", action="store_true", help="Wait for all containers to complete")
@@ -353,7 +411,7 @@ Examples:
         format=getattr(args, "log_format", "text"),
         flush_each=getattr(args, "log_flush_each", False),
     )
-    
+
     # Get API key via credential helper (with env fallback)
     api_key: Optional[str] = None
     if resolve_secret is not None:
@@ -372,7 +430,7 @@ Examples:
             file=sys.stderr,
         )
         sys.exit(1)
-    
+
     # Preflight checks (docker daemon, disk space, output writable)
     preflight_errors = preflight_checks(args.output_dir.resolve(), skip_docker=args.skip_preflight)
     if preflight_errors:
@@ -381,7 +439,7 @@ Examples:
             print(f"  - {e}", file=sys.stderr)
         print("\nRun with --skip-preflight to bypass (not recommended).", file=sys.stderr)
         sys.exit(1)
-    
+
     # Get tasks
     if args.tasks:
         tasks = args.tasks
@@ -389,26 +447,27 @@ Examples:
         tasks = validate_tasks_file(args.tasks_file)
     else:
         parser.error("Must provide --tasks or --tasks-file")
-    
+
     # Parse extra environment variables
     extra_env = {}
     if args.env:
         for env in args.env:
             key, value = env.split("=", 1)
             extra_env[key] = value
-    
+
     # Create output directory
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Spawn containers
     results: list[AgentResult] = []
-    
+
     print(f"Spawning {len(tasks)} agents...", file=sys.stderr)
     log_event("spawn.start", backend="docker", tasks=len(tasks), phase=args.phase, parallel=args.parallel)
     spawn_start = time.time()
 
     # P1-C: O(1) circuit breaker via running counters instead of list rescan.
     from scripts._common import check_circuit_breaker_counters as _cb_counters
+
     cb_failed = 0
     cb_total = 0
 
@@ -419,9 +478,14 @@ Examples:
             # Check circuit breaker (O(1))
             if _cb_counters(cb_failed, cb_total, args.circuit_breaker):
                 print(f"Circuit breaker triggered at {args.circuit_breaker*100}% failure rate", file=sys.stderr)
-                log_event("spawn.circuit_breaker.tripped", backend="docker", threshold=args.circuit_breaker, completed=cb_total)
+                log_event(
+                    "spawn.circuit_breaker.tripped",
+                    backend="docker",
+                    threshold=args.circuit_breaker,
+                    completed=cb_total,
+                )
                 break
-            
+
             task_id = generate_task_id(task, i, args.phase)
             future = executor.submit(
                 spawn_container,
@@ -439,7 +503,7 @@ Examples:
                 docker_args=args.docker_args,
             )
             futures[future] = (task, task_id)
-        
+
         for future in as_completed(futures):
             task, task_id = futures[future]
             result = future.result()
@@ -450,42 +514,61 @@ Examples:
 
             if result.status == "running":
                 print(f"✓ Started: {task_id} ({task[:50]}...)", file=sys.stderr)
-                log_event("spawn.container.started", backend="docker", task_id=task_id, container_id=result.container_id)
+                log_event(
+                    "spawn.container.started", backend="docker", task_id=task_id, container_id=result.container_id
+                )
             else:
                 print(f"✗ Failed to start: {task_id} - {result.error}", file=sys.stderr)
-                log_event("spawn.container.started", backend="docker", task_id=task_id, status="failed", error=result.error)
-    
+                log_event(
+                    "spawn.container.started", backend="docker", task_id=task_id, status="failed", error=result.error
+                )
+
     # Wait for completion if requested
     if args.wait:
         print("\nWaiting for containers to complete...", file=sys.stderr)
-        
+
         for result in results:
             if result.status == "running":
                 result.start_time = time.time()
                 exit_code, error = wait_for_container(result.task_id, args.timeout)
                 result.end_time = time.time()
                 result.exit_code = exit_code
-                
+
                 if exit_code == 0:
                     result.status = "completed"
                     print(f"✓ Completed: {result.task_id} ({result.duration_seconds:.1f}s)", file=sys.stderr)
-                    log_event("spawn.container.completed", backend="docker", task_id=result.task_id, status="completed", duration=result.duration_seconds)
+                    log_event(
+                        "spawn.container.completed",
+                        backend="docker",
+                        task_id=result.task_id,
+                        status="completed",
+                        duration=result.duration_seconds,
+                    )
                 else:
                     result.status = "failed"
                     result.error = error or f"Exit code: {exit_code}"
                     print(f"✗ Failed: {result.task_id} - {result.error}", file=sys.stderr)
-                    log_event("spawn.container.completed", backend="docker", task_id=result.task_id, status="failed", exit_code=exit_code, error=result.error)
-                    
+                    log_event(
+                        "spawn.container.completed",
+                        backend="docker",
+                        task_id=result.task_id,
+                        status="failed",
+                        exit_code=exit_code,
+                        error=result.error,
+                    )
+
                     # Retry logic with exponential backoff
                     if args.retry_failed:
                         for retry in range(args.max_retries):
                             backoff = calculate_backoff(retry)
-                            print(f"  Retrying ({retry + 1}/{args.max_retries}) after {backoff:.1f}s...", file=sys.stderr)
+                            print(
+                                f"  Retrying ({retry + 1}/{args.max_retries}) after {backoff:.1f}s...", file=sys.stderr
+                            )
                             time.sleep(backoff)
-                            
+
                             # Remove failed container
                             subprocess.run(["docker", "rm", "-f", result.task_id], capture_output=True)
-                            
+
                             # Respawn
                             new_result = spawn_container(
                                 task=result.task,
@@ -500,19 +583,19 @@ Examples:
                                 share=args.share,
                                 extra_env=extra_env,
                             )
-                            
+
                             if new_result.status == "running":
                                 exit_code, error = wait_for_container(new_result.task_id, args.timeout)
                                 if exit_code == 0:
                                     result.status = "completed"
                                     result.task_id = new_result.task_id
                                     result.retries = retry + 1
-                                    print(f"  ✓ Retry succeeded", file=sys.stderr)
+                                    print("  ✓ Retry succeeded", file=sys.stderr)
                                     break
-    
+
     # Output results
     spawn_duration = time.time() - spawn_start
-    
+
     if args.json:
         completed_durations = [r.duration_seconds for r in results if r.duration_seconds]
         output = {
@@ -523,7 +606,9 @@ Examples:
             "total_retries": sum(r.retries for r in results),
             "metrics": {
                 "spawn_duration_seconds": spawn_duration,
-                "avg_task_duration_seconds": sum(completed_durations) / len(completed_durations) if completed_durations else None,
+                "avg_task_duration_seconds": (
+                    sum(completed_durations) / len(completed_durations) if completed_durations else None
+                ),
                 "max_task_duration_seconds": max(completed_durations) if completed_durations else None,
             },
             "results": [
@@ -542,12 +627,12 @@ Examples:
         }
         print(json.dumps(output, indent=2))
     else:
-        print(f"\nSummary:", file=sys.stderr)
+        print("\nSummary:", file=sys.stderr)
         print(f"  Total: {len(results)}", file=sys.stderr)
         print(f"  Running: {sum(1 for r in results if r.status == 'running')}", file=sys.stderr)
         print(f"  Completed: {sum(1 for r in results if r.status == 'completed')}", file=sys.stderr)
         print(f"  Failed: {sum(1 for r in results if r.status == 'failed')}", file=sys.stderr)
-        
+
         # Print container IDs for monitoring
         if not args.wait:
             print("\nContainer IDs:", file=sys.stderr)
