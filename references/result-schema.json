@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/13DJTEQ/multi-agent-workflows/schemas/result-envelope/v1",
+  "title": "Multi-Agent Workflows Result Envelope v1",
+  "description": "Minimal common envelope for sub-agent results. See references/result-schema.md for rationale and migration plan.",
+  "type": "object",
+  "required": ["schema_version", "status"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1",
+      "description": "Envelope version. Bump on breaking changes."
+    },
+    "status": {
+      "enum": ["ok", "partial", "failed"],
+      "description": "Terminal status from the agent's perspective."
+    },
+    "task_id": {
+      "type": "string",
+      "description": "Client-assigned task identifier, matches spawn_* task_id."
+    },
+    "error": {
+      "type": "string",
+      "description": "Error description when status is not 'ok'."
+    },
+    "data": {
+      "description": "Workflow-specific result payload. Free-form."
+    },
+    "metrics": {
+      "type": "object",
+      "description": "Performance/cost metrics. Well-known fields: duration_seconds, tokens_used, cost_usd, model.",
+      "properties": {
+        "duration_seconds": {"type": "number", "minimum": 0},
+        "tokens_used": {"type": "integer", "minimum": 0},
+        "cost_usd": {"type": "number", "minimum": 0},
+        "model": {"type": "string"}
+      },
+      "additionalProperties": true
+    },
+    "provenance": {
+      "type": "object",
+      "description": "Source metadata: agent, model, commit, timestamps.",
+      "properties": {
+        "agent": {"type": "string"},
+        "model": {"type": "string"},
+        "commit": {"type": "string"},
+        "started_at": {"type": "string"},
+        "finished_at": {"type": "string"}
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

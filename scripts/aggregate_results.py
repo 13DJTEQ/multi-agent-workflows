@@ -256,7 +256,15 @@ Examples:
     # Metadata
     parser.add_argument("--include-provenance", action="store_true", help="Include source info")
     parser.add_argument("--include-stats", action="store_true", help="Include aggregation statistics")
-    
+
+    # Schema enforcement (opt-in; see references/result-schema.md)
+    parser.add_argument(
+        "--validate-schema",
+        action="store_true",
+        help="Validate each input against references/result-schema.json (v1 envelope). "
+             "Drops status=='failed' entries from merge/concat; malformed envelopes abort.",
+    )
+
     args = parser.parse_args()
     
     # Collect input files
@@ -294,19 +302,54 @@ Examples:
     else:
         loaded = [load_file(f) for f in input_files]
     
+    status_counts: Counter = Counter()
+    schema_errors: list[tuple[str, list[str]]] = []
+    validator_schema = None
+    if args.validate_schema:
+        try:
+            from scripts.schema_validator import validate_envelope, _load_schema  # type: ignore
+        except ImportError:
+            try:
+                from .schema_validator import validate_envelope, _load_schema  # type: ignore
+            except ImportError:
+                sys.path.insert(0, str(Path(__file__).parent))
+                from schema_validator import validate_envelope, _load_schema  # type: ignore
+        validator_schema = _load_schema()
+
     for f, data in loaded:
-        if data is not None:
-            results.append(data)
-            if args.include_provenance:
-                agent_id = f.parent.name if f.parent != args.input_dir else f.stem
-                provenance[agent_id] = {
-                    "file": str(f),
-                    "timestamp": datetime.fromtimestamp(f.stat().st_mtime).isoformat(),
-                }
-        else:
+        if data is None:
             failed_files.append(str(f))
             if not args.skip_invalid:
                 print(f"Warning: Failed to load {f}", file=sys.stderr)
+            continue
+
+        if args.validate_schema and isinstance(data, dict):
+            vr = validate_envelope(data, schema=validator_schema)
+            if not vr.ok:
+                schema_errors.append((str(f), vr.errors))
+                failed_files.append(str(f))
+                print(f"Schema: {f} ✗ {'; '.join(vr.errors)}", file=sys.stderr)
+                continue
+            status = data.get("status")
+            status_counts[str(status)] += 1
+            # Drop status=='failed' entries from aggregation per migration plan
+            if status == "failed":
+                continue
+
+        results.append(data)
+        if args.include_provenance:
+            agent_id = f.parent.name if f.parent != args.input_dir else f.stem
+            provenance[agent_id] = {
+                "file": str(f),
+                "timestamp": datetime.fromtimestamp(f.stat().st_mtime).isoformat(),
+            }
+
+    if args.validate_schema and schema_errors:
+        print(
+            f"Error: {len(schema_errors)} envelope(s) failed schema validation. Aborting.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     
     # Check success ratio
     total = len(input_files)
@@ -363,6 +406,8 @@ Examples:
             }
             if failed_files:
                 output["stats"]["failed_files"] = failed_files
+            if args.validate_schema and status_counts:
+                output["stats"]["status_breakdown"] = dict(status_counts)
     else:
         output = aggregated
     
