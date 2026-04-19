@@ -328,7 +328,10 @@ Examples:
     add_log_format_arg(parser)
 
     args = parser.parse_args()
-    _log_configure(format=getattr(args, "log_format", "text"))
+    _log_configure(
+        format=getattr(args, "log_format", "text"),
+        flush_each=getattr(args, "log_flush_each", False),
+    )
     log_event("aggregate.start", strategy=args.strategy, validate_schema=args.validate_schema)
     
     # Collect input files

@@ -252,7 +252,10 @@ def main():
     add_log_format_arg(parser)
 
     args = parser.parse_args()
-    _log_configure(format=getattr(args, "log_format", "text"))
+    _log_configure(
+        format=getattr(args, "log_format", "text"),
+        flush_each=getattr(args, "log_flush_each", False),
+    )
     log_event("phase.wait.start", phase=args.phase, backend=args.backend)
     
     # If depends-on specified, wait for that phase first
