@@ -83,6 +83,36 @@ jobs:
           name: eval-results
           path: eval-results.json
 
+  benchmarks:
+    name: Benchmarks (advisory)
+    runs-on: ubuntu-latest
+    continue-on-error: true  # advisory — perf numbers don't block merges
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install pytest pytest-benchmark
+
+      - name: Run benchmarks
+        run: |
+          pytest bench/ --benchmark-only --benchmark-json=bench-results.json -q
+
+      - name: Compare against committed baseline
+        run: |
+          pytest bench/ --benchmark-only --benchmark-compare=bench/baseline.json --benchmark-compare-fail=mean:20% -q || true
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-results
+          path: bench-results.json
+
   integration:
     name: Integration Tests
     runs-on: ubuntu-latest

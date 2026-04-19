@@ -1,0 +1,458 @@
+{
+  "machine_info": {
+    "node": "MacBookPro",
+    "processor": "arm",
+    "machine": "arm64",
+    "python_compiler": "Clang 21.0.0 (clang-2100.0.123.102)",
+    "python_implementation": "CPython",
+    "python_implementation_version": "3.14.4",
+    "python_version": "3.14.4",
+    "python_build": [
+      "main",
+      "Apr  7 2026 13:13:20"
+    ],
+    "release": "25.4.0",
+    "system": "Darwin",
+    "cpu": {
+      "python_version": "3.14.4.final.0 (64 bit)",
+      "cpuinfo_version": [
+        9,
+        0,
+        0
+      ],
+      "cpuinfo_version_string": "9.0.0",
+      "arch": "ARM_8",
+      "bits": 64,
+      "count": 8,
+      "arch_string_raw": "arm64",
+      "brand_raw": "Apple M1 Pro"
+    }
+  },
+  "commit_info": {
+    "id": "6b27885b4b25ebf17dffea9133d450f9d86a0285",
+    "time": "2026-04-19T07:29:52-07:00",
+    "author_time": "2026-04-19T07:29:52-07:00",
+    "dirty": true,
+    "project": "multi-agent-workflows",
+    "branch": "phase7/bench-baseline"
+  },
+  "datetime": "2026-04-19T15:18:29.314246+00:00",
+  "benchmarks": [
+    {
+      "name": "test_merge_strategy[10]",
+      "fullname": "bench/test_aggregation.py::test_merge_strategy[10]",
+      "stats": {
+        "mean": 1.0343404106724483e-06,
+        "stddev": 3.8852818706305677e-07,
+        "median": 1.0000003385357559e-06,
+        "min": 9.159994078800082e-07,
+        "max": 4.8875000175030436e-05,
+        "rounds": 50633,
+        "ops": 966799.701222035
+      },
+      "params": {
+        "count": 10
+      }
+    },
+    {
+      "name": "test_merge_strategy[100]",
+      "fullname": "bench/test_aggregation.py::test_merge_strategy[100]",
+      "stats": {
+        "mean": 8.66074042132997e-06,
+        "stddev": 1.5510993863043283e-06,
+        "median": 8.50000014906982e-06,
+        "min": 8.292000529763754e-06,
+        "max": 8.59159999890835e-05,
+        "rounds": 95239,
+        "ops": 115463.56908898523
+      },
+      "params": {
+        "count": 100
+      }
+    },
+    {
+      "name": "test_merge_strategy[1000]",
+      "fullname": "bench/test_aggregation.py::test_merge_strategy[1000]",
+      "stats": {
+        "mean": 8.577418926139694e-05,
+        "stddev": 5.6673755746458515e-06,
+        "median": 8.416699984081788e-05,
+        "min": 8.337500003108289e-05,
+        "max": 0.00024124999981722794,
+        "rounds": 10821,
+        "ops": 11658.518822632048
+      },
+      "params": {
+        "count": 1000
+      }
+    },
+    {
+      "name": "test_merge_strategy[10000]",
+      "fullname": "bench/test_aggregation.py::test_merge_strategy[10000]",
+      "stats": {
+        "mean": 0.0008604303978321643,
+        "stddev": 2.7521997295138832e-05,
+        "median": 0.0008560419996683777,
+        "min": 0.0008395830000154092,
+        "max": 0.0011217080000278656,
+        "rounds": 1096,
+        "ops": 1162.2090555139362
+      },
+      "params": {
+        "count": 10000
+      }
+    },
+    {
+      "name": "test_concat_strategy[10]",
+      "fullname": "bench/test_aggregation.py::test_concat_strategy[10]",
+      "stats": {
+        "mean": 3.185690385093118e-05,
+        "stddev": 3.3395104344462546e-06,
+        "median": 3.137499970762292e-05,
+        "min": 3.0915999559510965e-05,
+        "max": 0.00014037500022823224,
+        "rounds": 12897,
+        "ops": 31390.370033425894
+      },
+      "params": {
+        "count": 10
+      }
+    },
+    {
+      "name": "test_concat_strategy[100]",
+      "fullname": "bench/test_aggregation.py::test_concat_strategy[100]",
+      "stats": {
+        "mean": 0.00032399146134291914,
+        "stddev": 1.3109958951890537e-05,
+        "median": 0.0003201670006092172,
+        "min": 0.00031683299948781496,
+        "max": 0.0004683339993789559,
+        "rounds": 2935,
+        "ops": 3086.5010943655075
+      },
+      "params": {
+        "count": 100
+      }
+    },
+    {
+      "name": "test_concat_strategy[1000]",
+      "fullname": "bench/test_aggregation.py::test_concat_strategy[1000]",
+      "stats": {
+        "mean": 0.003248825227874353,
+        "stddev": 9.326649396485762e-05,
+        "median": 0.0032138335004674445,
+        "min": 0.0031675829995947424,
+        "max": 0.0036304579998613917,
+        "rounds": 294,
+        "ops": 307.80356893937375
+      },
+      "params": {
+        "count": 1000
+      }
+    },
+    {
+      "name": "test_rollup_metrics[10]",
+      "fullname": "bench/test_aggregation.py::test_rollup_metrics[10]",
+      "stats": {
+        "mean": 6.9362059328440595e-06,
+        "stddev": 6.772295497302375e-07,
+        "median": 6.916000529599842e-06,
+        "min": 6.582999958482105e-06,
+        "max": 0.00010879199999180855,
+        "rounds": 48001,
+        "ops": 144171.0366851765
+      },
+      "params": {
+        "count": 10
+      }
+    },
+    {
+      "name": "test_rollup_metrics[100]",
+      "fullname": "bench/test_aggregation.py::test_rollup_metrics[100]",
+      "stats": {
+        "mean": 6.18550241710136e-05,
+        "stddev": 4.098793169433728e-06,
+        "median": 6.125000072643161e-05,
+        "min": 5.995799983793404e-05,
+        "max": 0.00017575000038050348,
+        "rounds": 15474,
+        "ops": 16166.835489955534
+      },
+      "params": {
+        "count": 100
+      }
+    },
+    {
+      "name": "test_rollup_metrics[1000]",
+      "fullname": "bench/test_aggregation.py::test_rollup_metrics[1000]",
+      "stats": {
+        "mean": 0.000630173866280709,
+        "stddev": 1.497981610843534e-05,
+        "median": 0.0006269374998737476,
+        "min": 0.0006113330000516726,
+        "max": 0.0007493749999412103,
+        "rounds": 1578,
+        "ops": 1586.8636474914576
+      },
+      "params": {
+        "count": 1000
+      }
+    },
+    {
+      "name": "test_rollup_metrics[10000]",
+      "fullname": "bench/test_aggregation.py::test_rollup_metrics[10000]",
+      "stats": {
+        "mean": 0.006331375499974002,
+        "stddev": 0.00011607613641645096,
+        "median": 0.006297207999978127,
+        "min": 0.006170125000608095,
+        "max": 0.0068393330002436414,
+        "rounds": 160,
+        "ops": 157.9435621855166
+      },
+      "params": {
+        "count": 10000
+      }
+    },
+    {
+      "name": "test_merge_dicts_last_policy[100]",
+      "fullname": "bench/test_aggregation.py::test_merge_dicts_last_policy[100]",
+      "stats": {
+        "mean": 8.679246411708662e-06,
+        "stddev": 1.1053145702376876e-06,
+        "median": 8.583000635553617e-06,
+        "min": 8.291000085591804e-06,
+        "max": 8.412500028498471e-05,
+        "rounds": 95621,
+        "ops": 115217.37632093942
+      },
+      "params": {
+        "count": 100
+      }
+    },
+    {
+      "name": "test_merge_dicts_last_policy[1000]",
+      "fullname": "bench/test_aggregation.py::test_merge_dicts_last_policy[1000]",
+      "stats": {
+        "mean": 8.609350965153958e-05,
+        "stddev": 4.076474570832971e-06,
+        "median": 8.587499996792758e-05,
+        "min": 8.345799960807199e-05,
+        "max": 0.00020266699993953807,
+        "rounds": 11500,
+        "ops": 11615.277435517086
+      },
+      "params": {
+        "count": 1000
+      }
+    },
+    {
+      "name": "test_check_circuit_breaker_list_variant[10]",
+      "fullname": "bench/test_circuit_breaker.py::test_check_circuit_breaker_list_variant[10]",
+      "stats": {
+        "mean": 3.828584326360944e-07,
+        "stddev": 7.3337731389998e-08,
+        "median": 3.7710001379309686e-07,
+        "min": 3.6249998629500625e-07,
+        "max": 4.735399988931021e-06,
+        "rounds": 120005,
+        "ops": 2611931.499365711
+      },
+      "params": {
+        "count": 10
+      }
+    },
+    {
+      "name": "test_check_circuit_breaker_list_variant[100]",
+      "fullname": "bench/test_circuit_breaker.py::test_check_circuit_breaker_list_variant[100]",
+      "stats": {
+        "mean": 1.6027562655726847e-06,
+        "stddev": 3.029992442034321e-07,
+        "median": 1.5730001905467361e-06,
+        "min": 1.5415000689245062e-06,
+        "max": 2.009374998124258e-05,
+        "rounds": 156863,
+        "ops": 623925.185307379
+      },
+      "params": {
+        "count": 100
+      }
+    },
+    {
+      "name": "test_check_circuit_breaker_list_variant[1000]",
+      "fullname": "bench/test_circuit_breaker.py::test_check_circuit_breaker_list_variant[1000]",
+      "stats": {
+        "mean": 1.3856162656287417e-05,
+        "stddev": 2.2344141344599173e-06,
+        "median": 1.3625000065076165e-05,
+        "min": 1.3457999557431322e-05,
+        "max": 0.00011099999937869143,
+        "rounds": 67609,
+        "ops": 72170.05348491899
+      },
+      "params": {
+        "count": 1000
+      }
+    },
+    {
+      "name": "test_check_circuit_breaker_list_variant[10000]",
+      "fullname": "bench/test_circuit_breaker.py::test_check_circuit_breaker_list_variant[10000]",
+      "stats": {
+        "mean": 0.00014043541374621554,
+        "stddev": 8.378099836953143e-06,
+        "median": 0.00013799999942420982,
+        "min": 0.00013712500003748573,
+        "max": 0.0002639579997776309,
+        "rounds": 6985,
+        "ops": 7120.711032383369
+      },
+      "params": {
+        "count": 10000
+      }
+    },
+    {
+      "name": "test_log_event_json[1000]",
+      "fullname": "bench/test_log.py::test_log_event_json[1000]",
+      "stats": {
+        "mean": 0.00248681997926361,
+        "stddev": 6.124602238097048e-05,
+        "median": 0.002470187499966414,
+        "min": 0.0024074590000964236,
+        "max": 0.002997040999616729,
+        "rounds": 386,
+        "ops": 402.11997986927753
+      },
+      "params": {
+        "count": 1000
+      }
+    },
+    {
+      "name": "test_log_event_json[10000]",
+      "fullname": "bench/test_log.py::test_log_event_json[10000]",
+      "stats": {
+        "mean": 0.024519696146299105,
+        "stddev": 0.00012403621566529487,
+        "median": 0.02451775000008638,
+        "min": 0.024325084000338393,
+        "max": 0.024926291999690875,
+        "rounds": 41,
+        "ops": 40.783539650467304
+      },
+      "params": {
+        "count": 10000
+      }
+    },
+    {
+      "name": "test_log_event_json[100000]",
+      "fullname": "bench/test_log.py::test_log_event_json[100000]",
+      "stats": {
+        "mean": 0.24555080819991418,
+        "stddev": 0.0007330657564029302,
+        "median": 0.24517958300020837,
+        "min": 0.24507825000000594,
+        "max": 0.24681745799989585,
+        "rounds": 5,
+        "ops": 4.072476923740582
+      },
+      "params": {
+        "count": 100000
+      }
+    },
+    {
+      "name": "test_log_event_text[1000]",
+      "fullname": "bench/test_log.py::test_log_event_text[1000]",
+      "stats": {
+        "mean": 0.0014914491009454215,
+        "stddev": 3.166819123480511e-05,
+        "median": 0.0014865830003145675,
+        "min": 0.0014453750000029686,
+        "max": 0.0016801250003481982,
+        "rounds": 634,
+        "ops": 670.4888550109457
+      },
+      "params": {
+        "count": 1000
+      }
+    },
+    {
+      "name": "test_log_event_text[10000]",
+      "fullname": "bench/test_log.py::test_log_event_text[10000]",
+      "stats": {
+        "mean": 0.014947305191192166,
+        "stddev": 0.0001988463307631221,
+        "median": 0.014937000000372791,
+        "min": 0.014664084000287403,
+        "max": 0.016124207999382634,
+        "rounds": 68,
+        "ops": 66.90169145601303
+      },
+      "params": {
+        "count": 10000
+      }
+    },
+    {
+      "name": "test_parse_run_id[{\"run_id\": \"5972cca4-a410-42af-930a-e56bc23e07ac\", \"status\": \"pending\"}]",
+      "fullname": "bench/test_misc.py::test_parse_run_id[{\"run_id\": \"5972cca4-a410-42af-930a-e56bc23e07ac\", \"status\": \"pending\"}]",
+      "stats": {
+        "mean": 1.0147057896047408e-06,
+        "stddev": 2.1881476185461852e-07,
+        "median": 1.0000003385357559e-06,
+        "min": 8.750002962187864e-07,
+        "max": 3.479099996184232e-05,
+        "rounds": 48982,
+        "ops": 985507.3364561474
+      },
+      "params": {
+        "inp": "{\"run_id\": \"5972cca4-a410-42af-930a-e56bc23e07ac\", \"status\": \"pending\"}"
+      }
+    },
+    {
+      "name": "test_parse_run_id[Spawned agent with run ID: 5972cca4-a410-42af-930a-e56bc23e07ac\\nDone.]",
+      "fullname": "bench/test_misc.py::test_parse_run_id[Spawned agent with run ID: 5972cca4-a410-42af-930a-e56bc23e07ac\\nDone.]",
+      "stats": {
+        "mean": 2.6819854522669387e-06,
+        "stddev": 3.746487825275438e-07,
+        "median": 2.666000000317581e-06,
+        "min": 2.5409999580006115e-06,
+        "max": 1.3125000805302989e-05,
+        "rounds": 7562,
+        "ops": 372858.1000149548
+      },
+      "params": {
+        "inp": "Spawned agent with run ID: 5972cca4-a410-42af-930a-e56bc23e07ac\nDone."
+      }
+    },
+    {
+      "name": "test_validate_envelope_builtin[100]",
+      "fullname": "bench/test_misc.py::test_validate_envelope_builtin[100]",
+      "stats": {
+        "mean": 0.0027290172028123904,
+        "stddev": 8.478607311178515e-05,
+        "median": 0.0027155409998158575,
+        "min": 0.0026557920000414015,
+        "max": 0.0033182919996761484,
+        "rounds": 355,
+        "ops": 366.43228154423116
+      },
+      "params": {
+        "count": 100
+      }
+    },
+    {
+      "name": "test_validate_envelope_builtin[1000]",
+      "fullname": "bench/test_misc.py::test_validate_envelope_builtin[1000]",
+      "stats": {
+        "mean": 0.027358514394803166,
+        "stddev": 0.0005085003132724299,
+        "median": 0.027200729000469437,
+        "min": 0.026676792000216665,
+        "max": 0.028741874999468564,
+        "rounds": 38,
+        "ops": 36.55169230204813
+      },
+      "params": {
+        "count": 1000
+      }
+    }
+  ]
+}
