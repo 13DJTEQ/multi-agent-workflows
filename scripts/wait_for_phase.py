@@ -21,6 +21,17 @@ from enum import Enum
 from pathlib import Path
 from typing import Callable, Optional
 
+# Structured logging (optional; degrades gracefully if unavailable)
+try:
+    from scripts._log import configure as _log_configure, log_event, add_log_format_arg  # type: ignore
+except ImportError:
+    try:
+        from ._log import configure as _log_configure, log_event, add_log_format_arg  # type: ignore
+    except ImportError:
+        def _log_configure(*_a, **_k): ...
+        def log_event(*_a, **_k): ...
+        def add_log_format_arg(_p): ...
+
 
 class Backend(Enum):
     DOCKER = "docker"
@@ -238,8 +249,11 @@ def main():
     
     # Success criteria
     parser.add_argument("--min-success", type=float, default=1.0, help="Minimum success ratio (0.0-1.0)")
-    
+    add_log_format_arg(parser)
+
     args = parser.parse_args()
+    _log_configure(format=getattr(args, "log_format", "text"))
+    log_event("phase.wait.start", phase=args.phase, backend=args.backend)
     
     # If depends-on specified, wait for that phase first
     if args.depends_on:
@@ -332,9 +346,11 @@ def main():
     # Exit code
     if success_ratio >= args.min_success:
         print(f"✓ Phase {args.phase} completed successfully", file=sys.stderr)
+        log_event("phase.wait.done", phase=args.phase, backend=args.backend, status="ok", completed=completed, failed=failed, total=total, success_ratio=success_ratio)
         sys.exit(0)
     else:
         print(f"✗ Phase {args.phase} failed (success ratio {success_ratio:.1%} < {args.min_success:.1%})", file=sys.stderr)
+        log_event("phase.wait.done", phase=args.phase, backend=args.backend, status="failed", completed=completed, failed=failed, total=total, success_ratio=success_ratio)
         sys.exit(1)
 
 

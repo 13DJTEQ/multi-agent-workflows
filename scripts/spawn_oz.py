@@ -54,6 +54,17 @@ except ImportError:
     except ImportError:
         resolve_secret = None  # type: ignore
 
+# Structured logging (optional; degrades gracefully if unavailable)
+try:
+    from scripts._log import configure as _log_configure, log_event, add_log_format_arg  # type: ignore
+except ImportError:
+    try:
+        from ._log import configure as _log_configure, log_event, add_log_format_arg  # type: ignore
+    except ImportError:
+        def _log_configure(*_a, **_k): ...
+        def log_event(*_a, **_k): ...
+        def add_log_format_arg(_p): ...
+
 
 OZ_TERMINAL_STATES = {"succeeded", "failed", "cancelled", "completed", "errored"}
 OZ_RUN_GET_POLL_SEC = 5.0
@@ -322,8 +333,10 @@ Examples:
     out_group.add_argument("--wait", action="store_true", help="Wait for all runs to reach terminal state")
     out_group.add_argument("--json", action="store_true", help="Emit results as JSON envelope per task")
     out_group.add_argument("--output-dir", type=Path, default=Path("./outputs"), metavar="DIR", help="Directory to write per-run result.json (default: %(default)s)")
+    add_log_format_arg(out_group)
 
     args = parser.parse_args()
+    _log_configure(format=getattr(args, "log_format", "text"))
 
     # WARP_API_KEY sanity check (oz CLI needs it)
     api_key: Optional[str] = None
@@ -365,6 +378,7 @@ Examples:
 
     results: list[OzAgentResult] = []
     print(f"Spawning {len(tasks)} cloud agents in environment {args.environment}...", file=sys.stderr)
+    log_event("spawn.start", backend="oz", tasks=len(tasks), phase=args.phase, environment=args.environment, parallel=args.parallel)
 
     with ThreadPoolExecutor(max_workers=args.parallel) as pool:
         futures = {}
@@ -374,6 +388,7 @@ Examples:
                     f"Circuit breaker tripped at {args.circuit_breaker * 100:.0f}% failure rate; halting spawn.",
                     file=sys.stderr,
                 )
+                log_event("spawn.circuit_breaker.tripped", backend="oz", threshold=args.circuit_breaker, completed=len(results))
                 break
             task_id = generate_task_id(task, i, args.phase)
             fut = pool.submit(spawn_oz_agent, task=task, task_id=task_id, environment=args.environment)
@@ -385,8 +400,10 @@ Examples:
             results.append(r)
             if r.status == "running":
                 print(f"✓ Spawned: {task_id} (run={r.run_id}) — {task[:60]}", file=sys.stderr)
+                log_event("spawn.container.started", backend="oz", task_id=task_id, run_id=r.run_id)
             else:
                 print(f"✗ Spawn failed: {task_id} — {r.error}", file=sys.stderr)
+                log_event("spawn.container.started", backend="oz", task_id=task_id, status="failed", error=r.error)
                 if args.retry_failed and r.retries < args.max_retries:
                     # Simple retry (sequential; keeps parallelism code simple)
                     for attempt in range(args.max_retries):
@@ -408,6 +425,15 @@ Examples:
                 sym = "✓" if r.status in {"succeeded", "completed"} else "✗"
                 dur = f"{r.duration_seconds:.1f}s" if r.duration_seconds else "?"
                 print(f"{sym} {r.task_id} [{r.status}] ({dur})", file=sys.stderr)
+                log_event(
+                    "spawn.container.completed",
+                    backend="oz",
+                    task_id=r.task_id,
+                    run_id=r.run_id,
+                    status=r.status,
+                    duration=r.duration_seconds,
+                    pr_url=r.pr_url,
+                )
 
     # Persist envelopes
     for r in results:

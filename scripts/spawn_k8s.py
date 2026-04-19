@@ -18,6 +18,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+# Structured logging (optional; degrades gracefully if unavailable)
+try:
+    from scripts._log import configure as _log_configure, log_event, add_log_format_arg  # type: ignore
+except ImportError:
+    try:
+        from ._log import configure as _log_configure, log_event, add_log_format_arg  # type: ignore
+    except ImportError:
+        def _log_configure(*_a, **_k): ...
+        def log_event(*_a, **_k): ...
+        def add_log_format_arg(_p): ...
+
 
 @dataclass
 class JobResult:
@@ -243,8 +254,10 @@ def main():
     parser.add_argument("--wait", action="store_true", help="Wait for all jobs to complete")
     parser.add_argument("--dry-run", action="store_true", help="Print manifests without applying")
     parser.add_argument("--json", action="store_true", help="Output results as JSON")
-    
+    add_log_format_arg(parser)
+
     args = parser.parse_args()
+    _log_configure(format=getattr(args, "log_format", "text"))
     
     # Get tasks
     tasks = []
@@ -265,8 +278,9 @@ def main():
     
     # Create and apply jobs
     results: list[JobResult] = []
-    
+
     print(f"Creating {len(tasks)} Kubernetes Jobs...", file=sys.stderr)
+    log_event("spawn.start", backend="k8s", tasks=len(tasks), namespace=args.namespace)
     
     for i, task in enumerate(tasks):
         job_name = generate_job_name(task, i)
@@ -298,6 +312,7 @@ def main():
             success, output = apply_manifest(manifest)
             if success:
                 print(f"✓ Created: {job_name} ({task[:50]}...)", file=sys.stderr)
+                log_event("spawn.container.started", backend="k8s", task_id=job_name, namespace=args.namespace)
                 results.append(JobResult(
                     task_id=job_name,
                     task=task,
@@ -306,6 +321,7 @@ def main():
                 ))
             else:
                 print(f"✗ Failed to create: {job_name} - {output}", file=sys.stderr)
+                log_event("spawn.container.started", backend="k8s", task_id=job_name, status="failed", error=output[:200])
                 results.append(JobResult(
                     task_id=job_name,
                     task=task,
@@ -325,10 +341,13 @@ def main():
                 
                 if status == "completed":
                     print(f"✓ Completed: {result.job_name}", file=sys.stderr)
+                    log_event("spawn.container.completed", backend="k8s", task_id=result.job_name, status="completed")
                 elif status == "timeout":
                     print(f"⏱ Timeout: {result.job_name}", file=sys.stderr)
+                    log_event("spawn.container.completed", backend="k8s", task_id=result.job_name, status="timeout")
                 else:
                     print(f"✗ Failed: {result.job_name}", file=sys.stderr)
+                    log_event("spawn.container.completed", backend="k8s", task_id=result.job_name, status="failed")
     
     # Output results
     if args.json:
