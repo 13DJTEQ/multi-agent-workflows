@@ -272,16 +272,19 @@ def get_container_logs(task_id: str) -> str:
 
 def check_circuit_breaker(results: list[AgentResult], threshold: float, min_samples: int = 3) -> bool:
     """Check if failure rate exceeds threshold.
-    
-    Args:
-        results: List of completed agent results
-        threshold: Failure rate threshold (0.0-1.0)
-        min_samples: Minimum samples before triggering (avoids early false positives)
+
+    Preserved for backward compatibility. Internally now a thin wrapper over
+    the O(1) counter variant in scripts._common. Prefer passing counters
+    directly in new code (`check_circuit_breaker_counters`).
     """
-    if len(results) < min_samples:
+    # Intentionally replicate the local semantics rather than importing to
+    # avoid circular import headaches between spawn_docker and _common in
+    # constrained environments. Behavior identical to the counter variant.
+    total = len(results)
+    if total < min_samples:
         return False
     failed = sum(1 for r in results if r.status == "failed")
-    return (failed / len(results)) > threshold
+    return (failed / total) > threshold
 
 
 def validate_tasks_file(path: Path) -> list[str]:
@@ -401,14 +404,19 @@ Examples:
     log_event("spawn.start", backend="docker", tasks=len(tasks), phase=args.phase, parallel=args.parallel)
     spawn_start = time.time()
 
+    # P1-C: O(1) circuit breaker via running counters instead of list rescan.
+    from scripts._common import check_circuit_breaker_counters as _cb_counters
+    cb_failed = 0
+    cb_total = 0
+
     with ThreadPoolExecutor(max_workers=args.parallel) as executor:
         futures = {}
 
         for i, task in enumerate(tasks):
-            # Check circuit breaker
-            if check_circuit_breaker(results, args.circuit_breaker):
+            # Check circuit breaker (O(1))
+            if _cb_counters(cb_failed, cb_total, args.circuit_breaker):
                 print(f"Circuit breaker triggered at {args.circuit_breaker*100}% failure rate", file=sys.stderr)
-                log_event("spawn.circuit_breaker.tripped", backend="docker", threshold=args.circuit_breaker, completed=len(results))
+                log_event("spawn.circuit_breaker.tripped", backend="docker", threshold=args.circuit_breaker, completed=cb_total)
                 break
             
             task_id = generate_task_id(task, i, args.phase)
@@ -433,7 +441,10 @@ Examples:
             task, task_id = futures[future]
             result = future.result()
             results.append(result)
-            
+            cb_total += 1
+            if result.status == "failed":
+                cb_failed += 1
+
             if result.status == "running":
                 print(f"✓ Started: {task_id} ({task[:50]}...)", file=sys.stderr)
                 log_event("spawn.container.started", backend="docker", task_id=task_id, container_id=result.container_id)

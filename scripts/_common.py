@@ -34,11 +34,34 @@ def check_circuit_breaker(
 
     `min_samples` guards against early false positives when only 1-2 results
     have come back.
+
+    Note: O(N) per call because it rescans the list. Spawn loops at scale
+    should prefer `check_circuit_breaker_counters(failed, total, threshold,
+    min_samples)` which is O(1). Kept here for backward compatibility with
+    existing callers and tests.
     """
-    if len(results) < min_samples:
+    total = len(results)
+    if total < min_samples:
         return False
     failed = sum(1 for r in results if r.status == "failed")
-    return (failed / len(results)) > threshold
+    return (failed / total) > threshold
+
+
+def check_circuit_breaker_counters(
+    failed: int,
+    total: int,
+    threshold: float,
+    min_samples: int = 3,
+) -> bool:
+    """O(1) circuit breaker check for callers that already track counters.
+
+    Callers are expected to increment ``failed`` and ``total`` as each result
+    arrives and pass both to this helper. Semantics match
+    :func:`check_circuit_breaker` exactly.
+    """
+    if total < min_samples:
+        return False
+    return (failed / total) > threshold
 
 
 def validate_tasks_file(path: Path) -> list[str]:

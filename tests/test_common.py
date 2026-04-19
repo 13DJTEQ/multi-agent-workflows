@@ -43,6 +43,45 @@ class TestCheckCircuitBreaker:
         assert _common.check_circuit_breaker([_R("failed")] * 5, 0.5, min_samples=5)
 
 
+class TestCheckCircuitBreakerCounters:
+    """P1-C: O(1) counter-based variant; semantics must match the list version."""
+
+    def test_under_min_samples_returns_false(self):
+        assert not _common.check_circuit_breaker_counters(failed=2, total=2, threshold=0.3)
+
+    def test_at_min_samples_trips(self):
+        assert _common.check_circuit_breaker_counters(failed=3, total=3, threshold=0.3)
+
+    def test_below_threshold_does_not_trip(self):
+        assert not _common.check_circuit_breaker_counters(failed=1, total=3, threshold=0.5)
+
+    def test_custom_min_samples(self):
+        assert not _common.check_circuit_breaker_counters(failed=4, total=4, threshold=0.5, min_samples=5)
+        assert _common.check_circuit_breaker_counters(failed=5, total=5, threshold=0.5, min_samples=5)
+
+    def test_zero_total_safe(self):
+        """No division-by-zero when total=0 (min_samples guard kicks in)."""
+        assert not _common.check_circuit_breaker_counters(failed=0, total=0, threshold=0.5)
+
+    def test_matches_list_variant(self):
+        """Counter form must produce identical results to the list form for arbitrary inputs."""
+        scenarios = [
+            (3, 10, 0.3, 3),
+            (5, 10, 0.5, 3),
+            (4, 10, 0.4, 3),
+            (1, 10, 0.1, 3),
+            (0, 5, 0.2, 5),
+            (2, 5, 0.2, 3),
+        ]
+        for failed, total, threshold, min_samples in scenarios:
+            results = [_R("failed")] * failed + [_R("ok")] * (total - failed)
+            list_out = _common.check_circuit_breaker(results, threshold, min_samples)
+            counter_out = _common.check_circuit_breaker_counters(failed, total, threshold, min_samples)
+            assert list_out == counter_out, (
+                f"mismatch: list={list_out} counter={counter_out} for {(failed, total, threshold, min_samples)}"
+            )
+
+
 class TestValidateTasksFile:
     def test_loads_non_empty_lines(self, tmp_path):
         f = tmp_path / "tasks.txt"
