@@ -12,6 +12,7 @@
 | Phase 3 | ✅ Complete | Advanced patterns |
 | Phase 4 | ✅ Complete | Polish, edge cases, credential helper, dependency DAG, examples |
 | Phase 5 | ✅ Complete | Oz cloud-agent support: OzSecretBackend, backend guidance, write-only credential semantics |
+| Phase 6 | ✅ Complete | Cloud-native orchestration + production hardening: spawn_oz, schema enforcement, structured logging, Oz metrics, installer fix |
 
 ## Files Created
 
@@ -170,8 +171,18 @@ multi-agent-workflows/
 ## Known Minor Issues
 - [Issue #4](https://github.com/13DJTEQ/multi-agent-workflows/issues/4) — `install.sh --with-cli` does not generate `maw-*` wrappers under Python 3.14 venv (setuptools + 3.14 editable-install regression). Zero impact on agent usage (scripts invoked via `python3 scripts/...`). Tracked for future installer work.
 
+## Phase 6 Additions
+### Cloud-Native Orchestration + Production Hardening
+- ✅ **P0-A spawn_oz.py** — new backend for `oz agent run-cloud`; required `--environment`, fire-and-forget default + `--wait`; artifact capture
+- ✅ **P0-B Schema enforcement** — `references/result-schema.json`, `schema_validator.py`, `aggregate_results.py --validate-schema`
+- ✅ **P1-A Installer fix (#4)** — pipx-preferred; venv fallback pinned to 3.11/3.12; refuses 3.14; CI matrix
+- ✅ **P1-B Structured logging** — `_log.py` + `--log-format {text,json}` across 5 scripts; 8-event taxonomy
+- ✅ **P1-C Oz metrics** — tokens_used/cost_usd/model extracted from `oz run get`; `_rollup_metrics` + `metrics_rollup` in stats
+### New Test Coverage (Phase 6)
+- `tests/test_common.py` (9), `tests/test_spawn_oz.py` (22), `tests/test_schema_validator.py` (17), `tests/test_log.py` (12), `tests/test_oz_metrics.py` (14)
+**Phase 6 test count:** 243 tests passing (up from 169)
 ## Release Tag
-**`v1.0.0`** — First full release, all five phases merged to `main`.
+**`v1.1.0`** — Phase 6 merged to `main`. Baseline `v1.0.0` preserved.
 
 ## Commits
 ```
@@ -184,4 +195,9 @@ b427127 phase4: polish, edge-case preflight, credential helper, dependency DAG, 
 71b7fea Merge PR #2 (Phase 4) → main
 84e72c1 phase5: add OzSecretBackend for Warp cloud-agent credentials
 b939d87 Merge PR #3 (Phase 5) → main
+36f20d6 Merge PR #5 (Phase 6 P1-A installer fix)
+728ba15 Merge PR #6 (Phase 6 P0-A spawn_oz.py)
+c2e45ff Merge PR #7 (Phase 6 P0-B schema enforcement)
+d1802e2 Merge PR #8 (Phase 6 P1-B structured logging)
+284522c Merge PR #9 (Phase 6 P1-C Oz metrics)
 ```
