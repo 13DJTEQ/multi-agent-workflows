@@ -31,6 +31,17 @@ except ImportError:
     except ImportError:
         resolve_secret = None  # type: ignore
 
+# Structured logging (optional; degrades gracefully if unavailable)
+try:
+    from scripts._log import configure as _log_configure, log_event, add_log_format_arg  # type: ignore
+except ImportError:
+    try:
+        from ._log import configure as _log_configure, log_event, add_log_format_arg  # type: ignore
+    except ImportError:
+        def _log_configure(*_a, **_k): ...
+        def log_event(*_a, **_k): ...
+        def add_log_format_arg(_p): ...
+
 # Preflight thresholds
 MIN_FREE_DISK_MB = 500  # warn if output dir has less than this
 DOCKER_DAEMON_TIMEOUT_SEC = 5
@@ -332,8 +343,10 @@ Examples:
     out_group = parser.add_argument_group("Output")
     out_group.add_argument("--wait", action="store_true", help="Wait for all containers to complete")
     out_group.add_argument("--json", action="store_true", help="Output results as JSON (includes metrics)")
-    
+    add_log_format_arg(out_group)
+
     args = parser.parse_args()
+    _log_configure(format=getattr(args, "log_format", "text"))
     
     # Get API key via credential helper (with env fallback)
     api_key: Optional[str] = None
@@ -385,15 +398,17 @@ Examples:
     results: list[AgentResult] = []
     
     print(f"Spawning {len(tasks)} agents...", file=sys.stderr)
+    log_event("spawn.start", backend="docker", tasks=len(tasks), phase=args.phase, parallel=args.parallel)
     spawn_start = time.time()
-    
+
     with ThreadPoolExecutor(max_workers=args.parallel) as executor:
         futures = {}
-        
+
         for i, task in enumerate(tasks):
             # Check circuit breaker
             if check_circuit_breaker(results, args.circuit_breaker):
                 print(f"Circuit breaker triggered at {args.circuit_breaker*100}% failure rate", file=sys.stderr)
+                log_event("spawn.circuit_breaker.tripped", backend="docker", threshold=args.circuit_breaker, completed=len(results))
                 break
             
             task_id = generate_task_id(task, i, args.phase)
@@ -421,8 +436,10 @@ Examples:
             
             if result.status == "running":
                 print(f"✓ Started: {task_id} ({task[:50]}...)", file=sys.stderr)
+                log_event("spawn.container.started", backend="docker", task_id=task_id, container_id=result.container_id)
             else:
                 print(f"✗ Failed to start: {task_id} - {result.error}", file=sys.stderr)
+                log_event("spawn.container.started", backend="docker", task_id=task_id, status="failed", error=result.error)
     
     # Wait for completion if requested
     if args.wait:
@@ -438,10 +455,12 @@ Examples:
                 if exit_code == 0:
                     result.status = "completed"
                     print(f"✓ Completed: {result.task_id} ({result.duration_seconds:.1f}s)", file=sys.stderr)
+                    log_event("spawn.container.completed", backend="docker", task_id=result.task_id, status="completed", duration=result.duration_seconds)
                 else:
                     result.status = "failed"
                     result.error = error or f"Exit code: {exit_code}"
                     print(f"✗ Failed: {result.task_id} - {result.error}", file=sys.stderr)
+                    log_event("spawn.container.completed", backend="docker", task_id=result.task_id, status="failed", exit_code=exit_code, error=result.error)
                     
                     # Retry logic with exponential backoff
                     if args.retry_failed:

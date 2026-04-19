@@ -17,6 +17,17 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Optional, TypeVar
 
+# Structured logging (optional; degrades gracefully if unavailable)
+try:
+    from scripts._log import configure as _log_configure, log_event, add_log_format_arg  # type: ignore
+except ImportError:
+    try:
+        from ._log import configure as _log_configure, log_event, add_log_format_arg  # type: ignore
+    except ImportError:
+        def _log_configure(*_a, **_k): ...
+        def log_event(*_a, **_k): ...
+        def add_log_format_arg(_p): ...
+
 T = TypeVar("T")
 
 
@@ -264,8 +275,11 @@ Examples:
         help="Validate each input against references/result-schema.json (v1 envelope). "
              "Drops status=='failed' entries from merge/concat; malformed envelopes abort.",
     )
+    add_log_format_arg(parser)
 
     args = parser.parse_args()
+    _log_configure(format=getattr(args, "log_format", "text"))
+    log_event("aggregate.start", strategy=args.strategy, validate_schema=args.validate_schema)
     
     # Collect input files
     input_files = []
@@ -452,7 +466,16 @@ Examples:
             args.output.write_text(json.dumps(output, indent=2, default=str))
     
     print(f"✓ Aggregated {successful} results to {args.output}", file=sys.stderr)
-    
+    log_event(
+        "aggregate.done",
+        strategy=args.strategy,
+        total=total,
+        successful=successful,
+        failed=len(failed_files),
+        success_ratio=success_ratio,
+        output=str(args.output),
+    )
+
     if args.include_stats:
         print(f"  Strategy: {args.strategy}", file=sys.stderr)
         print(f"  Success rate: {success_ratio:.1%}", file=sys.stderr)
