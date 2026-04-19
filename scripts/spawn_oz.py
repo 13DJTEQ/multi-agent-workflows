@@ -87,6 +87,10 @@ class OzAgentResult:
     pr_url: Optional[str] = None
     branch: Optional[str] = None
     raw_run_get: Optional[dict] = field(default=None, repr=False)
+    # Cost / perf metrics extracted from `oz run get` (P1-C)
+    tokens_used: Optional[int] = None
+    cost_usd: Optional[float] = None
+    model: Optional[str] = None
 
     @property
     def duration_seconds(self) -> Optional[float]:
@@ -113,9 +117,68 @@ class OzAgentResult:
         }
         if self.error:
             env["error"] = self.error
+        metrics: dict = {}
         if self.duration_seconds is not None:
-            env["metrics"] = {"duration_seconds": self.duration_seconds}
+            metrics["duration_seconds"] = self.duration_seconds
+        if self.tokens_used is not None:
+            metrics["tokens_used"] = self.tokens_used
+        if self.cost_usd is not None:
+            metrics["cost_usd"] = self.cost_usd
+        if self.model:
+            metrics["model"] = self.model
+        if metrics:
+            env["metrics"] = metrics
         return env
+
+
+def _extract_metrics_from_oz(payload: dict) -> dict:
+    """Normalize cost/perf metrics from `oz run get` JSON (P1-C).
+
+    The Oz CLI response shape is not strictly standardized yet; accept a
+    handful of commonly-seen field names so we're resilient to naming drift.
+    Returns a dict with any of: tokens_used (int), cost_usd (float), model (str).
+    """
+    out: dict = {}
+    nested = payload.get("usage") or payload.get("metrics")
+    if isinstance(nested, dict) and nested:
+        tokens = (
+            nested.get("tokens_used")
+            or nested.get("total_tokens")
+            or nested.get("tokens")
+        )
+        cost = (
+            nested.get("cost_usd")
+            or nested.get("cost")
+            or nested.get("total_cost_usd")
+        )
+        model = nested.get("model") or payload.get("model")
+        if isinstance(tokens, (int, float)) and not isinstance(tokens, bool):
+            out["tokens_used"] = int(tokens)
+        if isinstance(cost, (int, float)) and not isinstance(cost, bool):
+            out["cost_usd"] = float(cost)
+        if isinstance(model, str):
+            out["model"] = model
+        return out
+    # Flat top-level shape fallback (no nested `usage`/`metrics` dict present)
+    for k_in, k_out, coerce in [
+        ("tokens_used", "tokens_used", int),
+        ("total_tokens", "tokens_used", int),
+        ("cost_usd", "cost_usd", float),
+        ("model", "model", str),
+    ]:
+        v = payload.get(k_in)
+        if v is None or isinstance(v, bool):
+            continue
+        if coerce is str:
+            if isinstance(v, str):
+                out[k_out] = v
+            continue
+        if isinstance(v, (int, float)):
+            try:
+                out[k_out] = coerce(v)
+            except (TypeError, ValueError):
+                continue
+    return out
 
 
 def generate_task_id(task: str, index: int, phase: Optional[str] = None) -> str:
@@ -264,6 +327,14 @@ def wait_for_run(
             result.status = state
             result.raw_run_get = payload
             result.output = payload.get("output") or payload.get("agent_output")
+            # Extract cost/perf metrics (P1-C)
+            metrics = _extract_metrics_from_oz(payload)
+            if "tokens_used" in metrics:
+                result.tokens_used = metrics["tokens_used"]
+            if "cost_usd" in metrics:
+                result.cost_usd = metrics["cost_usd"]
+            if "model" in metrics:
+                result.model = metrics["model"]
             # Look for PR artifact mentions in output
             if result.output:
                 pr_match = re.search(

@@ -221,6 +221,56 @@ STRATEGIES: dict[str, Callable] = {
 }
 
 
+def _rollup_metrics(results: list[Any]) -> dict:
+    """Sum metrics.* fields across result envelopes (P1-C).
+
+    Only operates on entries that look like the v1 envelope
+    (dict with a ``metrics`` sub-dict). Returns totals plus a per-model
+    breakdown when ``metrics.model`` is present.
+    """
+    total_tokens = 0
+    total_cost = 0.0
+    total_duration = 0.0
+    per_model: dict[str, dict] = {}
+    saw_any = False
+    for r in results:
+        if not isinstance(r, dict):
+            continue
+        m = r.get("metrics")
+        if not isinstance(m, dict):
+            continue
+        saw_any = True
+        tokens = m.get("tokens_used")
+        cost = m.get("cost_usd")
+        dur = m.get("duration_seconds")
+        model = m.get("model")
+        if isinstance(tokens, (int, float)):
+            total_tokens += int(tokens)
+        if isinstance(cost, (int, float)):
+            total_cost += float(cost)
+        if isinstance(dur, (int, float)):
+            total_duration += float(dur)
+        if isinstance(model, str):
+            bucket = per_model.setdefault(model, {"count": 0, "tokens_used": 0, "cost_usd": 0.0})
+            bucket["count"] += 1
+            if isinstance(tokens, (int, float)):
+                bucket["tokens_used"] += int(tokens)
+            if isinstance(cost, (int, float)):
+                bucket["cost_usd"] += float(cost)
+    if not saw_any:
+        return {}
+    result: dict = {}
+    if total_tokens:
+        result["total_tokens"] = total_tokens
+    if total_cost:
+        result["total_cost_usd"] = round(total_cost, 6)
+    if total_duration:
+        result["total_duration_seconds"] = round(total_duration, 3)
+    if per_model:
+        result["per_model"] = per_model
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Aggregate results from parallel agents",
@@ -422,6 +472,10 @@ Examples:
                 output["stats"]["failed_files"] = failed_files
             if args.validate_schema and status_counts:
                 output["stats"]["status_breakdown"] = dict(status_counts)
+            # Cost/perf rollup (P1-C): sum metrics.* across envelope-shaped inputs.
+            cost_rollup = _rollup_metrics(results)
+            if cost_rollup:
+                output["stats"]["metrics_rollup"] = cost_rollup
     else:
         output = aggregated
     
