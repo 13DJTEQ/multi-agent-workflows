@@ -11,6 +11,7 @@
 | Phase 2 | ✅ Complete | Backend expansion (K8s, CI, SSH) |
 | Phase 3 | ✅ Complete | Advanced patterns |
 | Phase 4 | ✅ Complete | Polish, edge cases, credential helper, dependency DAG, examples |
+| Phase 5 | ✅ Complete | Oz cloud-agent support: OzSecretBackend, backend guidance, write-only credential semantics |
 
 ## Files Created
 
@@ -151,14 +152,36 @@ multi-agent-workflows/
 - `tests/test_credential_helper.py` — 20+ assertions across all 5 backends
 - `tests/test_dependency_graph.py` — topo sort, validation, formats, cycle detection
 
-**Total test count:** 158 tests passing (up from ~100)
+**Phase 4 test count:** 158 tests passing (up from ~100)
+
+## Phase 5 Additions
+### Oz Cloud-Agent Support
+- ✅ **`OzSecretBackend`** — wraps `oz secret create/update/delete/list`; stdin-only value passing (never argv)
+- ✅ **Write-only semantics** — `get()` raises `NotImplementedError` by design (Oz secrets inject as env vars at runtime; not readable from CLI)
+- ✅ **Auto-upgrade** — `set()` transparently falls through to `oz secret update` on "already exists" conflict
+- ✅ **`spawn_docker.py`** — `--credential-backend oz` accepted alongside env/keychain/1password/vault/aws
+- ✅ **SKILL.md** — new "Running on Oz (cloud agents)" section with backend + credential guidance
+
+### New Test Coverage (Phase 5)
+- 11 new `OzSecretBackend` tests: write-only get, stdin-never-argv, team/description flags, update-on-conflict, missing-CLI error, delete, list_secrets across three response shapes + bad-JSON fallback, registry completeness
+
+**Phase 5 test count:** 169 tests passing (up from 158)
+
+## Known Minor Issues
+- [Issue #4](https://github.com/13DJTEQ/multi-agent-workflows/issues/4) — `install.sh --with-cli` does not generate `maw-*` wrappers under Python 3.14 venv (setuptools + 3.14 editable-install regression). Zero impact on agent usage (scripts invoked via `python3 scripts/...`). Tracked for future installer work.
+
+## Release Tag
+**`v1.0.0`** — First full release, all five phases merged to `main`.
 
 ## Commits
-
 ```
 bd0d0d1 Implement multi-agent-workflows skill with Phase 1-3 complete
 3d8a526 Optimize scripts: 5 iteration refinement
 fb16eda Add verification results and .gitignore
 3ee4910 perf: Pass 3 (merge_dicts) + Pass 5 (random hoist) + blocking test coverage
-<HEAD>  Phase 4: polish + open-questions resolved
+b427127 phase4: polish, edge-case preflight, credential helper, dependency DAG, examples
+19e8ba3 phase4: add installer script and CI workflow
+71b7fea Merge PR #2 (Phase 4) → main
+84e72c1 phase5: add OzSecretBackend for Warp cloud-agent credentials
+b939d87 Merge PR #3 (Phase 5) → main
 ```
