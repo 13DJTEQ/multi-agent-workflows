@@ -451,15 +451,20 @@ Examples:
     print(f"Spawning {len(tasks)} cloud agents in environment {args.environment}...", file=sys.stderr)
     log_event("spawn.start", backend="oz", tasks=len(tasks), phase=args.phase, environment=args.environment, parallel=args.parallel)
 
+    # P1-C: O(1) circuit breaker via running counters.
+    from scripts._common import check_circuit_breaker_counters as _cb_counters
+    cb_failed = 0
+    cb_total = 0
+
     with ThreadPoolExecutor(max_workers=args.parallel) as pool:
         futures = {}
         for i, task in enumerate(tasks):
-            if check_circuit_breaker(results, args.circuit_breaker):
+            if _cb_counters(cb_failed, cb_total, args.circuit_breaker):
                 print(
                     f"Circuit breaker tripped at {args.circuit_breaker * 100:.0f}% failure rate; halting spawn.",
                     file=sys.stderr,
                 )
-                log_event("spawn.circuit_breaker.tripped", backend="oz", threshold=args.circuit_breaker, completed=len(results))
+                log_event("spawn.circuit_breaker.tripped", backend="oz", threshold=args.circuit_breaker, completed=cb_total)
                 break
             task_id = generate_task_id(task, i, args.phase)
             fut = pool.submit(spawn_oz_agent, task=task, task_id=task_id, environment=args.environment)
@@ -469,6 +474,9 @@ Examples:
             task, task_id = futures[fut]
             r = fut.result()
             results.append(r)
+            cb_total += 1
+            if r.status == "failed":
+                cb_failed += 1
             if r.status == "running":
                 print(f"✓ Spawned: {task_id} (run={r.run_id}) — {task[:60]}", file=sys.stderr)
                 log_event("spawn.container.started", backend="oz", task_id=task_id, run_id=r.run_id)
