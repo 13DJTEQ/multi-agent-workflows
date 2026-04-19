@@ -10,6 +10,7 @@ Usage:
 import argparse
 import json
 import os
+import random
 import shlex
 import subprocess
 import sys
@@ -152,7 +153,6 @@ def wait_for_container(task_id: str, timeout: int = 3600) -> tuple[int, str]:
 
 def calculate_backoff(retry: int, base_delay: float = 2.0, max_delay: float = 60.0) -> float:
     """Calculate exponential backoff delay with jitter."""
-    import random
     delay = min(base_delay * (2 ** retry), max_delay)
     jitter = delay * 0.1 * random.random()
     return delay + jitter

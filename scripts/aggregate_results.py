@@ -15,7 +15,7 @@ import sys
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, TypeVar
+from typing import Any, Callable, Optional, TypeVar
 
 T = TypeVar("T")
 
@@ -56,22 +56,38 @@ def find_result_files(input_dir: Path, pattern: str = "result.json") -> list[Pat
 
 
 def merge_dicts(dicts: list[dict], policy: str = "last") -> dict:
-    """Merge multiple dictionaries."""
+    """Merge multiple dictionaries.
+
+    Fast paths:
+      - policy='last'  : chain of dict.update() (C-loop, ~4x faster than pure-Python
+        key iteration — see /tmp/maw-bench 'Pass 3' integration results).
+      - policy='first' : iterate in reverse so that earlier dicts overwrite later
+        dicts, giving first-seen-wins semantics with a single dict.update chain.
+    Slow path preserved for 'concat' and 'error', which require per-key logic.
+    """
+    if policy == "last":
+        result: dict = {}
+        for d in dicts:
+            result.update(d)
+        return result
+
+    if policy == "first":
+        result = {}
+        for d in reversed(dicts):
+            result.update(d)
+        return result
+
+    # 'concat' and 'error' policies: require per-key inspection.
     result = {}
-    
     for d in dicts:
         for key, value in d.items():
             if key not in result:
                 result[key] = value
-            elif policy == "last":
-                result[key] = value
-            elif policy == "first":
-                pass  # Keep existing
             elif policy == "concat" and isinstance(result[key], list) and isinstance(value, list):
                 result[key] = result[key] + value
             elif policy == "error":
                 raise ValueError(f"Conflict on key: {key}")
-    
+
     return result
 
 
