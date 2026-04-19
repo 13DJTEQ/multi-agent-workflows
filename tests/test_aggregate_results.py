@@ -240,3 +240,171 @@ class TestIntegration:
         # 2 True vs 1 False
         assert voted["decision"] is True
         assert voted["winner_count"] == 2
+
+
+class TestIterLoadedFiles:
+    """Phase 7 P1-A: streaming loader."""
+
+    def _write(self, tmp_path, n, bad_indices=()):
+        files = []
+        for i in range(n):
+            f = tmp_path / f"r{i}.json"
+            if i in bad_indices:
+                f.write_text("not json")
+            else:
+                f.write_text(f'{{"i": {i}}}')
+            files.append(f)
+        return files
+
+    def test_sequential_small_corpus(self, tmp_path):
+        files = self._write(tmp_path, 5)
+        loaded = list(ar.iter_loaded_files(files))
+        assert [d for _, d in loaded] == [{"i": i} for i in range(5)]
+
+    def test_parallel_large_corpus_preserves_order(self, tmp_path):
+        files = self._write(tmp_path, 50)
+        loaded = list(ar.iter_loaded_files(files, max_workers=4))
+        assert [d["i"] for _, d in loaded] == list(range(50))
+
+    def test_lazy_iteration_is_a_generator(self, tmp_path):
+        files = self._write(tmp_path, 20)
+        it = ar.iter_loaded_files(files, max_workers=4)
+        # First value arrives without materializing the whole list.
+        first = next(it)
+        assert first[1]["i"] == 0
+        # Drain the rest to release workers.
+        rest = list(it)
+        assert len(rest) == 19
+
+    def test_parse_failures_yield_none(self, tmp_path):
+        files = self._write(tmp_path, 20, bad_indices={3, 7})
+        loaded = list(ar.iter_loaded_files(files, max_workers=4))
+        nones = [i for i, (_, d) in enumerate(loaded) if d is None]
+        assert nones == [3, 7]
+
+    def test_empty_input(self, tmp_path):
+        assert list(ar.iter_loaded_files([])) == []
+
+
+class TestMergeDictsStreaming:
+    """Phase 7 P1-A: merge_dicts must tolerate iterator input."""
+
+    def test_merge_from_generator_last_policy(self):
+        gen = ({"k": i, f"x{i}": i} for i in range(5))
+        merged = ar.merge_dicts(gen, policy="last")
+        assert merged["k"] == 4
+        assert merged["x0"] == 0 and merged["x4"] == 4
+
+    def test_merge_from_generator_first_policy_matches_list(self):
+        items = [{"k": 1}, {"k": 2, "m": 9}, {"k": 3, "m": 10}]
+        from_list = ar.merge_dicts(list(items), policy="first")
+        from_iter = ar.merge_dicts(iter(items), policy="first")
+        assert from_list == from_iter == {"k": 1, "m": 9}
+
+    def test_merge_from_generator_concat_policy(self):
+        gen = (d for d in [{"xs": [1, 2]}, {"xs": [3, 4]}, {"xs": [5]}])
+        merged = ar.merge_dicts(gen, policy="concat")
+        assert merged == {"xs": [1, 2, 3, 4, 5]}
+
+
+class TestIncrementalRollup:
+    """Phase 7 P1-A: inline metrics rollup must match the list-based form."""
+
+    def _envelopes(self):
+        return [
+            {"status": "ok", "metrics": {"tokens_used": 100, "cost_usd": 0.01, "duration_seconds": 1.0, "model": "claude-opus-4"}},
+            {"status": "ok", "metrics": {"tokens_used": 250, "cost_usd": 0.04, "duration_seconds": 2.5, "model": "gpt-4"}},
+            {"status": "ok", "metrics": {"tokens_used": 50, "cost_usd": 0.005, "duration_seconds": 0.5, "model": "claude-opus-4"}},
+        ]
+
+    def test_incremental_equals_batch(self):
+        envs = self._envelopes()
+        batch = ar._rollup_metrics(envs)
+        incr = ar._IncrementalRollup()
+        for e in envs:
+            incr.observe(e)
+        assert incr.result() == batch
+
+    def test_empty_rollup(self):
+        assert ar._IncrementalRollup().result() == {}
+        assert ar._rollup_metrics([]) == {}
+
+    def test_non_envelope_entries_ignored(self):
+        incr = ar._IncrementalRollup()
+        incr.observe("not a dict")
+        incr.observe({"no": "metrics"})
+        incr.observe({"metrics": "not a dict"})
+        assert incr.result() == {}
+
+
+class TestMaybeSpillData:
+    """Phase 7 P1-A: --max-memory-mb artifact-pointer spillover."""
+
+    def test_below_budget_returns_envelope_unchanged(self, tmp_path):
+        env = {"status": "ok", "data": {"small": "payload"}}
+        result = ar._maybe_spill_data(env, tmp_path / "r.json", budget_bytes=1024)
+        assert result is env  # identity preserved
+
+    def test_above_budget_replaces_data_with_pointer(self, tmp_path):
+        big = "x" * 500
+        env = {"status": "ok", "data": {"payload": big}, "task_id": "t1"}
+        path = tmp_path / "big.json"
+        result = ar._maybe_spill_data(env, path, budget_bytes=100)
+        assert result is not env
+        assert result["data"] == {
+            "artifact_path": str(path),
+            "artifact_size": result["data"]["artifact_size"],
+        }
+        assert result["data"]["artifact_size"] > 100
+        # Original envelope untouched.
+        assert env["data"] == {"payload": big}
+
+    def test_missing_data_field_skipped(self, tmp_path):
+        env = {"status": "ok", "task_id": "t1"}
+        assert ar._maybe_spill_data(env, tmp_path / "r.json", 10) is env
+
+    def test_zero_budget_noop(self, tmp_path):
+        env = {"status": "ok", "data": {"x": "y" * 9999}}
+        assert ar._maybe_spill_data(env, tmp_path / "r.json", 0) is env
+
+
+class TestStreamingMainIntegration:
+    """End-to-end: invoke aggregate_results main() with streaming + spillover."""
+
+    def _write_corpus(self, tmp_path, n=25, big_at=(0, 12)):
+        root = tmp_path / "outputs"
+        root.mkdir()
+        for i in range(n):
+            sub = root / f"agent-{i:03d}"
+            sub.mkdir()
+            data = {"payload": "x" * 600} if i in big_at else {"i": i}
+            env = {
+                "schema_version": "1",
+                "status": "ok",
+                "task_id": f"t{i}",
+                "data": data,
+                "metrics": {"tokens_used": 10 + i, "cost_usd": 0.001 * i, "model": "claude-opus-4"},
+            }
+            (sub / "result.json").write_text(json.dumps(env))
+        return root
+
+    def test_streaming_merge_with_spillover(self, tmp_path, monkeypatch):
+        root = self._write_corpus(tmp_path, n=25, big_at={0, 12})
+        out = tmp_path / "report.json"
+        argv = [
+            "aggregate_results.py",
+            "--input-dir", str(root),
+            "--output", str(out),
+            "--strategy", "merge",
+            "--max-memory-mb", str(100 / (1024 * 1024)),  # 100-byte budget
+            "--include-stats",
+        ]
+        monkeypatch.setattr("sys.argv", argv)
+        ar.main()
+        report = json.loads(out.read_text())
+        assert report["stats"]["total_files"] == 25
+        assert report["stats"]["successful"] == 25
+        assert report["stats"]["spilled_payloads"] == 2
+        # metrics rollup rolled up inline
+        assert "metrics_rollup" in report["stats"]
+        assert report["stats"]["metrics_rollup"]["total_tokens"] == sum(10 + i for i in range(25))
