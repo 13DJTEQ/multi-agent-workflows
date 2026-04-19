@@ -1,6 +1,6 @@
 # Multi-Agent Workflows Skill — Verification Results
 
-**Date:** 2026-04-18  
+**Date:** 2026-04-19  
 **Status:** ✅ All phases complete and verified
 
 ## Implementation Summary
@@ -10,7 +10,7 @@
 | Phase 1 | ✅ Complete | Core framework with Docker backend |
 | Phase 2 | ✅ Complete | Backend expansion (K8s, CI, SSH) |
 | Phase 3 | ✅ Complete | Advanced patterns |
-| Phase 4 | ⏳ Pending | Polish and edge cases |
+| Phase 4 | ✅ Complete | Polish, edge cases, credential helper, dependency DAG, examples |
 
 ## Files Created
 
@@ -128,17 +128,37 @@ multi-agent-workflows/
    - Workload-based agent count
    - Auto-retry with exponential backoff
 
-## Remaining Work (Phase 4)
+## Phase 4 Additions
 
-- [ ] Add .gitignore for __pycache__
-- [ ] Description optimization for skill triggering
-- [ ] Edge case handling (network failures, disk full)
-- [ ] More comprehensive error messages
-- [ ] Example workflow scripts in examples/ directory
+### Polish
+- ✅ Description tightened for trigger accuracy (adds test sharding, DAG, clear NOT-use guidance)
+- ✅ Edge-case preflight checks: docker daemon reachable, output-dir writable, disk space
+- ✅ `--skip-preflight` escape hatch and actionable error messages
+- ✅ `examples/` directory with 4 runnable workflows + DAG manifest
 
-## Commit
+### Open Questions (with implementations)
+- ✅ **Context propagation** — `references/context-propagation.md` covering rules-only / explicit / summary / full strategies
+- ✅ **Credential handling** — `scripts/credential_helper.py` with macOS Keychain default and 1Password/Vault/AWS scaffolds; integrated into `spawn_docker.py --credential-backend`
+- ✅ **Result schema** — `references/result-schema.md` with envelope proposal, JSON Schema, migration path
+- ✅ **Dependency ordering** — `scripts/dependency_graph.py` with Kahn topo-sort, YAML/JSON manifest, phase-commands emitter, DOT visualization
+
+### New Evaluation Cases
+- `dag-ordering` (hard) — DAG manifest → optimal phase plan
+- `secret-via-keychain` (medium) — Keychain-resolved credentials
+- `preflight-edge-cases` (medium) — daemon/disk preflight
+
+### New Test Coverage
+- `tests/test_credential_helper.py` — 20+ assertions across all 5 backends
+- `tests/test_dependency_graph.py` — topo sort, validation, formats, cycle detection
+
+**Total test count:** 158 tests passing (up from ~100)
+
+## Commits
 
 ```
 bd0d0d1 Implement multi-agent-workflows skill with Phase 1-3 complete
-15 files changed, 3917 insertions(+)
+3d8a526 Optimize scripts: 5 iteration refinement
+fb16eda Add verification results and .gitignore
+3ee4910 perf: Pass 3 (merge_dicts) + Pass 5 (random hoist) + blocking test coverage
+<HEAD>  Phase 4: polish + open-questions resolved
 ```

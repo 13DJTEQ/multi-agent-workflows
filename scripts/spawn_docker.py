@@ -12,6 +12,7 @@ import json
 import os
 import random
 import shlex
+import shutil
 import subprocess
 import sys
 import time
@@ -19,6 +20,20 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
+
+# Optional credential helper integration (same package)
+try:
+    from scripts.credential_helper import resolve_secret  # type: ignore
+except ImportError:
+    try:
+        # When run as a module inside the package
+        from .credential_helper import resolve_secret  # type: ignore
+    except ImportError:
+        resolve_secret = None  # type: ignore
+
+# Preflight thresholds
+MIN_FREE_DISK_MB = 500  # warn if output dir has less than this
+DOCKER_DAEMON_TIMEOUT_SEC = 5
 
 
 @dataclass
@@ -158,6 +173,82 @@ def calculate_backoff(retry: int, base_delay: float = 2.0, max_delay: float = 60
     return delay + jitter
 
 
+def check_docker_available() -> tuple[bool, str]:
+    """Verify the Docker daemon is reachable. Returns (ok, message)."""
+    if not shutil.which("docker"):
+        return False, "`docker` CLI not found in PATH. Install Docker Desktop or docker-ce."
+    try:
+        result = subprocess.run(
+            ["docker", "info", "--format", "{{.ServerVersion}}"],
+            capture_output=True,
+            text=True,
+            timeout=DOCKER_DAEMON_TIMEOUT_SEC,
+        )
+        if result.returncode != 0:
+            stderr = result.stderr.strip() or "unknown error"
+            if "Cannot connect" in stderr or "daemon" in stderr.lower():
+                return False, f"Docker daemon not running: {stderr}"
+            return False, f"docker info failed: {stderr}"
+        return True, result.stdout.strip()
+    except subprocess.TimeoutExpired:
+        return False, f"Docker daemon did not respond within {DOCKER_DAEMON_TIMEOUT_SEC}s (is it starting?)"
+    except OSError as e:
+        return False, f"Failed to invoke docker: {e}"
+
+
+def check_disk_space(path: Path, min_free_mb: int = MIN_FREE_DISK_MB) -> tuple[bool, str]:
+    """Verify `path` has enough free space. Returns (ok, message)."""
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        stat = shutil.disk_usage(path)
+        free_mb = stat.free // (1024 * 1024)
+        if free_mb < min_free_mb:
+            return False, f"Only {free_mb}MB free at {path} (need >= {min_free_mb}MB). Clear disk or choose another --output-dir."
+        return True, f"{free_mb}MB free at {path}"
+    except OSError as e:
+        if "No space left" in str(e):
+            return False, f"Disk full at {path}: {e}"
+        return False, f"Cannot access {path}: {e}"
+
+
+def check_output_writable(path: Path) -> tuple[bool, str]:
+    """Verify we can write to the output directory."""
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        probe = path / f".writable-probe-{os.getpid()}"
+        probe.write_text("ok")
+        probe.unlink()
+        return True, "writable"
+    except OSError as e:
+        return False, f"Cannot write to {path}: {e}"
+
+
+def preflight_checks(output_dir: Path, skip_docker: bool = False) -> list[str]:
+    """Run all preflight checks. Returns list of error messages (empty = OK)."""
+    errors: list[str] = []
+
+    if not skip_docker:
+        ok, msg = check_docker_available()
+        if ok:
+            print(f"✓ Docker daemon reachable (server v{msg})", file=sys.stderr)
+        else:
+            errors.append(f"Docker: {msg}")
+
+    ok, msg = check_output_writable(output_dir)
+    if ok:
+        print(f"✓ Output directory writable: {output_dir}", file=sys.stderr)
+    else:
+        errors.append(f"Output dir: {msg}")
+
+    ok, msg = check_disk_space(output_dir)
+    if ok:
+        print(f"✓ Disk space OK ({msg})", file=sys.stderr)
+    else:
+        errors.append(f"Disk: {msg}")
+
+    return errors
+
+
 def get_container_logs(task_id: str) -> str:
     """Get logs from a container."""
     result = subprocess.run(
@@ -234,6 +325,8 @@ Examples:
     fault_group.add_argument("--circuit-breaker", type=float, default=0.5, metavar="RATIO", help="Stop if failure rate exceeds threshold (default: %(default)s)")
     fault_group.add_argument("--retry-failed", action="store_true", help="Retry failed tasks with exponential backoff")
     fault_group.add_argument("--max-retries", type=int, default=3, metavar="N", help="Max retries per task (default: %(default)s)")
+    fault_group.add_argument("--skip-preflight", action="store_true", help="Skip docker/disk preflight checks (not recommended)")
+    fault_group.add_argument("--credential-backend", choices=["env", "keychain", "1password", "vault", "aws"], help="Backend for resolving WARP_API_KEY (default: env then keychain)")
     
     # Output options
     out_group = parser.add_argument_group("Output")
@@ -242,10 +335,32 @@ Examples:
     
     args = parser.parse_args()
     
-    # Get API key
-    api_key = os.environ.get("WARP_API_KEY")
+    # Get API key via credential helper (with env fallback)
+    api_key: Optional[str] = None
+    if resolve_secret is not None:
+        try:
+            api_key = resolve_secret("WARP_API_KEY", backend=args.credential_backend)
+        except Exception as e:
+            print(f"Warning: credential backend failed ({e}); falling back to env", file=sys.stderr)
     if not api_key:
-        print("Error: WARP_API_KEY environment variable not set", file=sys.stderr)
+        api_key = os.environ.get("WARP_API_KEY")
+    if not api_key:
+        print(
+            "Error: WARP_API_KEY not found. Set it via one of:\n"
+            "  - export WARP_API_KEY=...\n"
+            "  - python3 scripts/credential_helper.py set WARP_API_KEY\n"
+            "  - --credential-backend 1password (with `op` signed in)",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    
+    # Preflight checks (docker daemon, disk space, output writable)
+    preflight_errors = preflight_checks(args.output_dir.resolve(), skip_docker=args.skip_preflight)
+    if preflight_errors:
+        print("\n✗ Preflight checks failed:", file=sys.stderr)
+        for e in preflight_errors:
+            print(f"  - {e}", file=sys.stderr)
+        print("\nRun with --skip-preflight to bypass (not recommended).", file=sys.stderr)
         sys.exit(1)
     
     # Get tasks
