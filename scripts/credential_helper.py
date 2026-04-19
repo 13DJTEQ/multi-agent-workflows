@@ -194,12 +194,124 @@ class AWSSecretsBackend(CredentialBackend):
         raise NotImplementedError("AWSSecretsBackend.set not implemented.")
 
 
+class OzSecretBackend(CredentialBackend):
+    """Warp Oz platform backend via the `oz secret` CLI.
+
+    Oz secrets are **write-only from the admin side** by design: values cannot
+    be read back through the CLI — they are injected as env vars into cloud
+    agents at runtime. This backend therefore supports `set`/`delete`/list but
+    `get` raises NotImplementedError with guidance.
+
+    Inside an Oz cloud agent, use the `env` backend (secrets arrive as env
+    vars). Use this `oz` backend on the admin machine to provision them.
+
+    Flags used:
+        oz secret create <NAME> --value-file <path> [--team] [-d <desc>]
+        oz secret delete <NAME>
+        oz secret list --output-format json
+
+    The `service` argument is ignored (Oz secrets have a flat namespace).
+    """
+
+    name = "oz"
+
+    def _check_cli(self) -> None:
+        # Defer to subprocess to raise FileNotFoundError; wrapped in get/set.
+        pass
+
+    def get(self, key: str, service: str = DEFAULT_SERVICE) -> Optional[str]:
+        raise NotImplementedError(
+            "Oz secrets are write-only from the CLI (by design). "
+            "Inside a cloud agent, secrets are injected as env vars — use --backend env. "
+            "To manage secrets from your Mac, use `oz secret create/update/delete`."
+        )
+
+    def set(
+        self,
+        key: str,
+        value: str,
+        service: str = DEFAULT_SERVICE,
+        team: bool = False,
+        description: Optional[str] = None,
+    ) -> None:
+        """Create the secret in Oz. Value is piped via stdin (never argv)."""
+        cmd = ["oz", "secret", "create", key]
+        if team:
+            cmd.append("--team")
+        if description:
+            cmd.extend(["-d", description])
+        try:
+            subprocess.run(
+                cmd,
+                input=value,
+                text=True,
+                check=True,
+                capture_output=True,
+            )
+        except FileNotFoundError:
+            raise RuntimeError(
+                "`oz` CLI not found. Install Warp's Oz CLI: https://docs.warp.dev/reference/cli"
+            )
+        except subprocess.CalledProcessError as e:
+            stderr = (e.stderr or "").strip()
+            # If secret exists, transparently update.
+            if "already exists" in stderr.lower() or "conflict" in stderr.lower():
+                update_cmd = ["oz", "secret", "update", key]
+                subprocess.run(
+                    update_cmd, input=value, text=True, check=True, capture_output=True
+                )
+                return
+            raise
+
+    def delete(self, key: str, service: str = DEFAULT_SERVICE) -> None:
+        try:
+            subprocess.run(
+                ["oz", "secret", "delete", key],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except FileNotFoundError:
+            raise RuntimeError("`oz` CLI not found.")
+
+    def list_secrets(self) -> list[str]:
+        """Return the names of secrets stored in Oz (value is NOT returned)."""
+        try:
+            out = subprocess.run(
+                ["oz", "secret", "list", "--output-format", "json"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+        except FileNotFoundError:
+            raise RuntimeError("`oz` CLI not found.")
+        import json as _json
+
+        try:
+            data = _json.loads(out.stdout or "[]")
+        except _json.JSONDecodeError:
+            return []
+        # Accept either a list of dicts or a dict with a `secrets` key.
+        if isinstance(data, dict):
+            data = data.get("secrets", [])
+        names: list[str] = []
+        for item in data or []:
+            if isinstance(item, dict):
+                name = item.get("name") or item.get("Name") or item.get("id")
+                if name:
+                    names.append(str(name))
+            elif isinstance(item, str):
+                names.append(item)
+        return names
+
+
 BACKENDS: dict[str, type[CredentialBackend]] = {
     "env": EnvBackend,
     "keychain": KeychainBackend,
     "1password": OnePasswordBackend,
     "vault": VaultBackend,
     "aws": AWSSecretsBackend,
+    "oz": OzSecretBackend,
 }
 
 

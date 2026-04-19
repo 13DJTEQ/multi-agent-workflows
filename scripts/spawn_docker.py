@@ -326,7 +326,7 @@ Examples:
     fault_group.add_argument("--retry-failed", action="store_true", help="Retry failed tasks with exponential backoff")
     fault_group.add_argument("--max-retries", type=int, default=3, metavar="N", help="Max retries per task (default: %(default)s)")
     fault_group.add_argument("--skip-preflight", action="store_true", help="Skip docker/disk preflight checks (not recommended)")
-    fault_group.add_argument("--credential-backend", choices=["env", "keychain", "1password", "vault", "aws"], help="Backend for resolving WARP_API_KEY (default: env then keychain)")
+    fault_group.add_argument("--credential-backend", choices=["env", "keychain", "1password", "vault", "aws", "oz"], help="Backend for resolving WARP_API_KEY (default: env then keychain; use `env` inside Oz cloud agents)")
     
     # Output options
     out_group = parser.add_argument_group("Output")
