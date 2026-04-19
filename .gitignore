@@ -2,3 +2,7 @@ __pycache__/
 .venv/
 .pytest_cache/
 *.pyc
+
+# MemPalace per-project files (issue #185)
+mempalace.yaml
+entities.json

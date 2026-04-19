@@ -38,6 +38,7 @@ dev = [
 [project.scripts]
 maw-spawn-docker = "scripts.spawn_docker:main"
 maw-spawn-k8s = "scripts.spawn_k8s:main"
+maw-spawn-oz = "scripts.spawn_oz:main"
 maw-wait-phase = "scripts.wait_for_phase:main"
 maw-aggregate = "scripts.aggregate_results:main"
 maw-eval = "scripts.run_evals:main"
