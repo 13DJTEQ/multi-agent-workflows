@@ -28,25 +28,30 @@ jobs:
         run: black --check scripts/ tests/
 
   unit-tests:
-    name: Unit Tests
+    name: Unit Tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Set up Python
+
+      - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-      
+          python-version: ${{ matrix.python-version }}
+
       - name: Install dependencies
         run: |
           pip install pytest pytest-cov
-      
+
       - name: Run tests
         run: |
           pytest tests/ -v --cov=scripts --cov-report=xml --cov-report=term-missing
-      
+
       - name: Upload coverage
+        if: matrix.python-version == '3.12'
         uses: codecov/codecov-action@v4
         with:
           files: coverage.xml
