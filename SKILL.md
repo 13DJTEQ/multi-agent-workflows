@@ -1,6 +1,6 @@
 ---
 name: multi-agent-workflows
-description: Orchestrate parallel agent workflows across Docker, Kubernetes, CI, and remote backends. Use when decomposing complex tasks into parallelizable subtasks, running parallel code analysis, fan-out refactoring, or coordinating multiple agents on independent work. Triggers include "parallelize this", "run multiple agents", "fan out", "distribute tasks", "orchestrate agents", or any task that would benefit from concurrent execution across isolated environments.
+description: Orchestrate parallel local agents across Docker, Kubernetes, CI runners, and SSH. Use when decomposing work into independent subtasks, fan-out analysis or refactoring, test sharding, multi-phase pipelines with dependency graphs, or aggregating results from concurrent agents. Triggers include "parallelize this", "run multiple agents", "fan out", "distribute tasks", "orchestrate agents", "run N agents in parallel", "shard tests", or "DAG of agent tasks". Do NOT use for single-shot tasks, `/orchestrate`-suitable jobs, or cloud-managed runs (use `oz agent run-cloud`).
 ---
 
 # Multi-Agent Local Workflows
@@ -372,6 +372,52 @@ done
 - `references/ci-backend.md` — GitHub Actions, Jenkins
 - `references/remote-backend.md` — SSH, rsync patterns
 - `references/aggregation-patterns.md` — Result merging strategies
+- `references/context-propagation.md` — How much context to forward to sub-agents
+- `references/result-schema.md` — Standardizing agent output envelopes
+
+## Credential Handling
+
+Secrets (like `WARP_API_KEY`) are resolved via `scripts/credential_helper.py` with a pluggable backend. Default on macOS is the Keychain; scaffolding exists for 1Password, Vault, and AWS Secrets Manager.
+
+```bash
+# One-time setup: store the key in macOS Keychain
+python3 <skill_dir>/scripts/credential_helper.py set WARP_API_KEY
+
+# spawn_docker.py auto-resolves via env → keychain; override with:
+python3 <skill_dir>/scripts/spawn_docker.py --credential-backend 1password --tasks ...
+```
+
+See `scripts/credential_helper.py --help` for all backends. Never inline secrets in prompts.
+
+## Dependency DAG Workflows
+
+For tasks with explicit ordering, declare a manifest and let `dependency_graph.py` compute the optimal phase schedule:
+
+```yaml
+# manifest.yaml
+tasks:
+  - id: scan
+    prompt: "Scan codebase"
+  - id: deep-dive
+    prompt: "Deep dive on hotspots"
+    depends_on: [scan]
+```
+
+```bash
+# Compute and run
+python3 <skill_dir>/scripts/dependency_graph.py plan manifest.yaml
+./examples/phased-refactor.sh manifest.yaml
+```
+
+The topo-sort yields the minimum number of synchronization points; tasks within a phase run in parallel.
+
+## Examples
+
+Runnable end-to-end workflows in `examples/`:
+- `parallel-code-review.sh` — fan-out review across subdirectories
+- `phased-refactor.sh` — DAG-driven multi-phase refactor
+- `test-sharding.sh` — parallel pytest via round-robin sharding
+- `multi-backend.sh` — Docker-first with Kubernetes fallback
 
 ## Comparison with Existing Primitives
 

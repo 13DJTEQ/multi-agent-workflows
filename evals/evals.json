@@ -134,6 +134,66 @@
       },
       "difficulty": "hard",
       "tags": ["kubernetes", "scaling", "sharding", "enterprise"]
+    },
+    {
+      "id": "dag-ordering",
+      "name": "Dependency DAG Ordering",
+      "description": "Compute optimal phase plan from a manifest with task dependencies",
+      "prompt": "I have a refactor workflow: first scan, then in parallel do security and perf analysis, then synthesize. Set this up as a dependency graph.",
+      "expected_behavior": [
+        "Creates a YAML/JSON manifest with depends_on edges",
+        "Invokes dependency_graph.py to validate + plan",
+        "Plan yields exactly 3 phases (scan, [security,perf], synth)",
+        "Uses examples/phased-refactor.sh or similar to drive execution"
+      ],
+      "evaluation_criteria": {
+        "manifest_structure": "depends_on relationships correctly expressed",
+        "phase_count": "dependency_graph computes 3 phases",
+        "diamond_detected": "Phase 2 has parallelism=2",
+        "no_cycles": "Validation catches hypothetical cycles"
+      },
+      "difficulty": "hard",
+      "tags": ["dag", "dependencies", "phased-execution", "manifest"]
+    },
+    {
+      "id": "secret-via-keychain",
+      "name": "Secret Resolution via Keychain",
+      "description": "Resolve WARP_API_KEY from macOS Keychain rather than env",
+      "prompt": "I don't want to export WARP_API_KEY in my shell. Use my macOS keychain instead.",
+      "expected_behavior": [
+        "Uses credential_helper.py set to store the secret first",
+        "spawn_docker.py resolves via --credential-backend keychain or auto",
+        "Secret is never inlined into prompts or logs",
+        "Documents fallback chain (env -> keychain)"
+      ],
+      "evaluation_criteria": {
+        "backend_keychain": "KeychainBackend used on macOS",
+        "no_inline_secret": "WARP_API_KEY value never appears in prompts",
+        "env_fallback": "Env var still works if set",
+        "scaffold_aware": "Mentions 1password/vault scaffolding for future"
+      },
+      "difficulty": "medium",
+      "tags": ["credentials", "keychain", "security", "scaffolding"]
+    },
+    {
+      "id": "preflight-edge-cases",
+      "name": "Preflight Handles Missing Docker / Full Disk",
+      "description": "Spawner surfaces clear errors when Docker daemon or disk is unavailable",
+      "prompt": "Run the workflow but first check that Docker is running and we have enough disk space.",
+      "expected_behavior": [
+        "spawn_docker.py performs preflight checks by default",
+        "Reports daemon not running with actionable fix",
+        "Reports disk full / unwritable output directory",
+        "Supports --skip-preflight as escape hatch"
+      ],
+      "evaluation_criteria": {
+        "daemon_check": "docker info probed with short timeout",
+        "disk_check": "free bytes at output dir checked against threshold",
+        "writable_probe": "write-probe file created and removed",
+        "actionable_errors": "Messages include what to fix"
+      },
+      "difficulty": "medium",
+      "tags": ["preflight", "edge-cases", "error-handling"]
     }
   ],
   "evaluation_metrics": {

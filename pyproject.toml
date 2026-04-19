@@ -1,0 +1,93 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "multi-agent-workflows"
+version = "1.0.0"
+description = "Orchestrate parallel agent workflows across Docker, Kubernetes, CI, and remote backends"
+readme = "SKILL.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "MediaWaveTech"},
+]
+keywords = ["agents", "orchestration", "parallel", "docker", "kubernetes"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "ruff>=0.1.0",
+    "black>=23.0",
+]
+
+[project.scripts]
+maw-spawn-docker = "scripts.spawn_docker:main"
+maw-spawn-k8s = "scripts.spawn_k8s:main"
+maw-wait-phase = "scripts.wait_for_phase:main"
+maw-aggregate = "scripts.aggregate_results:main"
+maw-eval = "scripts.run_evals:main"
+
+[project.urls]
+Repository = "https://github.com/MediaWaveTech/multi-agent-workflows"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["scripts*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.md", "*.json"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # Pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+]
+ignore = [
+    "E501",  # line too long (handled by formatter)
+]
+
+[tool.ruff.per-file-ignores]
+"tests/*" = ["B011"]
+
+[tool.black]
+line-length = 120
+target-version = ["py310", "py311", "py312"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+
+[tool.coverage.run]
+source = ["scripts"]
+omit = ["tests/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+]

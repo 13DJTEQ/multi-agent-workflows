@@ -1,0 +1,40 @@
+# Example DAG manifest for dependency_graph.py.
+#
+# Computes a diamond-pattern plan:
+#   scan -> (deep-security, deep-perf) -> synthesize
+#
+# Run with:
+#   python3 scripts/dependency_graph.py plan examples/manifests/refactor-example.yaml
+#   ./examples/phased-refactor.sh examples/manifests/refactor-example.yaml
+
+tasks:
+  - id: scan
+    prompt: "Perform a high-level scan of the codebase; list hotspots in hotspots.md"
+    backend: docker
+    resources:
+      memory: 2g
+      cpus: "1"
+
+  - id: deep-security
+    prompt: "Read hotspots.md. Deep security review of each hotspot. Emit result.json with findings."
+    depends_on: [scan]
+    backend: docker
+    resources:
+      memory: 4g
+      cpus: "2"
+
+  - id: deep-perf
+    prompt: "Read hotspots.md. Identify performance regressions and O(n^2) risks. Emit result.json."
+    depends_on: [scan]
+    backend: docker
+    resources:
+      memory: 4g
+      cpus: "2"
+
+  - id: synthesize
+    prompt: "Read deep-security and deep-perf outputs. Produce unified refactor plan as result.json with status=ok."
+    depends_on: [deep-security, deep-perf]
+    backend: docker
+    resources:
+      memory: 2g
+      cpus: "1"
