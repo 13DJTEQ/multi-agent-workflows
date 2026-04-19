@@ -14,21 +14,24 @@ import collections
 import json
 import sys
 from collections import Counter
-from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator, Optional, Tuple, TypeVar
 
 # Structured logging (optional; degrades gracefully if unavailable)
 try:
-    from scripts._log import configure as _log_configure, log_event, add_log_format_arg  # type: ignore
+    from scripts._log import add_log_format_arg, log_event
+    from scripts._log import configure as _log_configure  # type: ignore
 except ImportError:
     try:
-        from ._log import configure as _log_configure, log_event, add_log_format_arg  # type: ignore
+        from ._log import add_log_format_arg, log_event
+        from ._log import configure as _log_configure  # type: ignore
     except ImportError:
+
         def _log_configure(*_a, **_k): ...
         def log_event(*_a, **_k): ...
         def add_log_format_arg(_p): ...
+
 
 T = TypeVar("T")
 
@@ -51,20 +54,20 @@ def load_text_file(path: Path) -> Optional[str]:
 
 def find_result_files(input_dir: Path, pattern: str = "result.json") -> list[Path]:
     """Find all result files in the input directory.
-    
+
     Search order: exact pattern match > any .json > any .md
     """
     # Direct files matching pattern
     results = list(input_dir.glob(f"**/{pattern}"))
-    
+
     # Fallback to any JSON files
     if not results:
         results = list(input_dir.glob("**/*.json"))
-    
+
     # Fallback to markdown files for concat strategy
     if not results:
         results = list(input_dir.glob("**/*.md"))
-    
+
     return sorted(results)
 
 
@@ -200,7 +203,7 @@ def strategy_concat(
                 text_results.append(json.dumps(r, indent=2))
         else:
             text_results.append(str(r))
-    
+
     return separator.join(text_results)
 
 
@@ -215,7 +218,7 @@ def strategy_vote(
     """Vote strategy: use majority for boolean/choice outputs."""
     votes = []
     confidences = []
-    
+
     for r in results:
         if vote_field in r:
             votes.append(r[vote_field])
@@ -223,20 +226,20 @@ def strategy_vote(
                 confidences.append(r[confidence_field])
             else:
                 confidences.append(1.0)
-    
+
     if not votes:
         return {"error": f"No votes found for field: {vote_field}"}
-    
+
     # Count votes (weighted if requested)
     if weighted:
         vote_weights: dict[Any, float] = {}
-        for vote, conf in zip(votes, confidences):
+        for vote, conf in zip(votes, confidences, strict=False):
             key = str(vote)
             vote_weights[key] = vote_weights.get(key, 0) + conf
-        
+
         winner = max(vote_weights.items(), key=lambda x: x[1])
         total_weight = sum(vote_weights.values())
-        
+
         return {
             vote_field: winner[0] == "True" if winner[0] in ("True", "False") else winner[0],
             "vote_weights": vote_weights,
@@ -248,7 +251,7 @@ def strategy_vote(
         counter = Counter(str(v) for v in votes)
         total = len(votes)
         winner, count = counter.most_common(1)[0]
-        
+
         return {
             vote_field: winner == "True" if winner in ("True", "False") else winner,
             "vote_count": dict(counter),
@@ -265,6 +268,7 @@ def strategy_latest(
     **kwargs,
 ) -> dict:
     """Latest strategy: take most recent output per key."""
+
     # Sort by timestamp
     def get_timestamp(r: dict) -> datetime:
         ts = r.get(timestamp_field, "1970-01-01T00:00:00")
@@ -272,9 +276,9 @@ def strategy_latest(
             return datetime.fromisoformat(ts.replace("Z", "+00:00"))
         except Exception:
             return datetime.min
-    
+
     sorted_results = sorted(results, key=get_timestamp, reverse=True)
-    
+
     if sorted_results:
         return sorted_results[0]
     return {}
@@ -329,9 +333,7 @@ class _IncrementalRollup:
         if isinstance(dur, (int, float)):
             self.total_duration += float(dur)
         if isinstance(model, str):
-            bucket = self.per_model.setdefault(
-                model, {"count": 0, "tokens_used": 0, "cost_usd": 0.0}
-            )
+            bucket = self.per_model.setdefault(model, {"count": 0, "tokens_used": 0, "cost_usd": 0.0})
             bucket["count"] += 1
             if isinstance(tokens, (int, float)):
                 bucket["tokens_used"] += int(tokens)
@@ -410,32 +412,38 @@ Examples:
   %(prog)s --input-files a.json b.json c.json -o vote.json --strategy vote --vote-field approved
 """,
     )
-    
+
     # Input options
     input_group = parser.add_argument_group("Input (one required)")
     input_group.add_argument("--input-dir", type=Path, metavar="DIR", help="Directory containing agent outputs")
     input_group.add_argument("--input-files", nargs="+", type=Path, metavar="FILE", help="Specific files to aggregate")
     input_group.add_argument("--pattern", default="result.json", help="File pattern to match (default: %(default)s)")
-    
+
     # Output options
     parser.add_argument("--output", "-o", type=Path, required=True, help="Output file path")
-    parser.add_argument("--format", choices=["json", "yaml", "markdown", "csv"], help="Output format (auto-detected from extension)")
-    
+    parser.add_argument(
+        "--format", choices=["json", "yaml", "markdown", "csv"], help="Output format (auto-detected from extension)"
+    )
+
     # Strategy options
-    parser.add_argument("--strategy", "-s", default="merge", choices=list(STRATEGIES.keys()), help="Aggregation strategy")
-    parser.add_argument("--merge-policy", default="last", choices=["last", "first", "concat", "error"], help="Merge conflict policy")
+    parser.add_argument(
+        "--strategy", "-s", default="merge", choices=list(STRATEGIES.keys()), help="Aggregation strategy"
+    )
+    parser.add_argument(
+        "--merge-policy", default="last", choices=["last", "first", "concat", "error"], help="Merge conflict policy"
+    )
     parser.add_argument("--concat-separator", default="\n\n", help="Separator for concat strategy")
     parser.add_argument("--vote-field", default="decision", help="Field to vote on")
     parser.add_argument("--vote-threshold", type=float, default=0.5, help="Vote threshold for majority")
     parser.add_argument("--vote-weighted", action="store_true", help="Weight votes by confidence")
     parser.add_argument("--timestamp-field", default="timestamp", help="Timestamp field for latest strategy")
-    
+
     # Error handling
     parser.add_argument("--allow-partial", action="store_true", help="Allow partial results (some failures)")
     parser.add_argument("--min-success", type=float, default=0.0, help="Minimum success ratio required")
     parser.add_argument("--strict", action="store_true", help="Fail if any agent failed")
     parser.add_argument("--skip-invalid", action="store_true", help="Skip invalid/unparseable files")
-    
+
     # Metadata
     parser.add_argument("--include-provenance", action="store_true", help="Include source info")
     parser.add_argument("--include-stats", action="store_true", help="Include aggregation statistics")
@@ -445,7 +453,7 @@ Examples:
         "--validate-schema",
         action="store_true",
         help="Validate each input against references/result-schema.json (v1 envelope). "
-             "Drops status=='failed' entries from merge/concat; malformed envelopes abort.",
+        "Drops status=='failed' entries from merge/concat; malformed envelopes abort.",
     )
     # Streaming aggregation / memory cap (phase 7 P1-A)
     parser.add_argument(
@@ -454,8 +462,8 @@ Examples:
         default=None,
         metavar="MB",
         help="Per-envelope data budget. Envelopes whose `data` serializes above this "
-             "MiB threshold are replaced with {artifact_path, artifact_size} pointers "
-             "(see references/result-schema.md). Omit to retain all payloads.",
+        "MiB threshold are replaced with {artifact_path, artifact_size} pointers "
+        "(see references/result-schema.md). Omit to retain all payloads.",
     )
     parser.add_argument(
         "--load-workers",
@@ -472,7 +480,7 @@ Examples:
         flush_each=getattr(args, "log_flush_each", False),
     )
     log_event("aggregate.start", strategy=args.strategy, validate_schema=args.validate_schema)
-    
+
     # Collect input files
     input_files = []
     if args.input_files:
@@ -482,13 +490,13 @@ Examples:
     else:
         print("Error: Must provide --input-dir or --input-files", file=sys.stderr)
         sys.exit(1)
-    
+
     if not input_files:
         print("Error: No input files found", file=sys.stderr)
         sys.exit(1)
-    
+
     print(f"Found {len(input_files)} result files", file=sys.stderr)
-    
+
     # Shared accumulators (mutated during streaming load).
     provenance: dict[str, dict] = {}
     failed_files: list[str] = []
@@ -500,19 +508,17 @@ Examples:
     validate_envelope = None  # bound on demand to keep imports lazy
     if args.validate_schema:
         try:
-            from scripts.schema_validator import validate_envelope, _load_schema  # type: ignore
+            from scripts.schema_validator import _load_schema, validate_envelope  # type: ignore
         except ImportError:
             try:
-                from .schema_validator import validate_envelope, _load_schema  # type: ignore
+                from .schema_validator import _load_schema, validate_envelope  # type: ignore
             except ImportError:
                 sys.path.insert(0, str(Path(__file__).parent))
-                from schema_validator import validate_envelope, _load_schema  # type: ignore
+                from schema_validator import _load_schema, validate_envelope  # type: ignore
         validator_schema = _load_schema()
 
     spill_budget_bytes = (
-        int(args.max_memory_mb * 1024 * 1024)
-        if args.max_memory_mb is not None and args.max_memory_mb > 0
-        else 0
+        int(args.max_memory_mb * 1024 * 1024) if args.max_memory_mb is not None and args.max_memory_mb > 0 else 0
     )
     # Counter incremented inside the streaming generator so vote/latest paths
     # (which materialize) and merge/concat paths (which don't) agree on the
@@ -616,17 +622,17 @@ Examples:
     if successful == 0:
         print("Error: No valid results to aggregate", file=sys.stderr)
         sys.exit(1)
-    
+
     # Build final output
     if args.include_provenance or args.include_stats:
         if isinstance(aggregated, dict):
             output = {"data": aggregated}
         else:
             output = {"data": str(aggregated)}
-        
+
         if args.include_provenance:
             output["provenance"] = provenance
-        
+
         if args.include_stats:
             output["stats"] = {
                 "total_files": total,
@@ -649,7 +655,7 @@ Examples:
                 output["stats"]["spilled_payloads"] = spilled_ref[0]
     else:
         output = aggregated
-    
+
     # Determine output format
     output_format = args.format
     if not output_format:
@@ -662,14 +668,15 @@ Examples:
             ".csv": "csv",
         }
         output_format = format_map.get(suffix, "json")
-    
+
     # Write output
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    
+
     if output_format == "json":
         args.output.write_text(json.dumps(output, indent=2, default=str))
     elif output_format == "yaml":
         import yaml
+
         args.output.write_text(yaml.dump(output, default_flow_style=False))
     elif output_format == "markdown":
         if isinstance(output, str):
@@ -680,6 +687,7 @@ Examples:
             args.output.write_text(json.dumps(output, indent=2, default=str))
     elif output_format == "csv":
         import csv
+
         if isinstance(output, list):
             with open(args.output, "w", newline="") as f:
                 if output and isinstance(output[0], dict):
@@ -689,7 +697,7 @@ Examples:
         else:
             print("Warning: CSV format requires list output, writing as JSON", file=sys.stderr)
             args.output.write_text(json.dumps(output, indent=2, default=str))
-    
+
     print(f"✓ Aggregated {successful} results to {args.output}", file=sys.stderr)
     log_event(
         "aggregate.done",

@@ -1,4 +1,5 @@
 """Tests for scripts/_log.py."""
+
 from __future__ import annotations
 
 import io
@@ -142,8 +143,6 @@ class TestBufferedFlush:
     """P1-D: flush policy. Buffered by default, atexit-safe, replay-complete."""
 
     def test_buffered_does_not_flush_every_event(self):
-        buf = io.StringIO()
-
         class CountingBuffer(io.StringIO):
             def __init__(self):
                 super().__init__()

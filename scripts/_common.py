@@ -4,6 +4,7 @@ Kept module-private (leading underscore) so it's clear this is internal
 plumbing, not part of the public script surface. Each spawn_* script
 imports from here to avoid duplicating fault-tolerance logic.
 """
+
 from __future__ import annotations
 
 import random
@@ -20,7 +21,7 @@ class _HasStatus(Protocol):
 
 def calculate_backoff(retry: int, base_delay: float = 2.0, max_delay: float = 60.0) -> float:
     """Exponential backoff with 10% jitter. retry is 0-indexed."""
-    delay = min(base_delay * (2 ** retry), max_delay)
+    delay = min(base_delay * (2**retry), max_delay)
     jitter = delay * 0.1 * random.random()
     return delay + jitter
 
@@ -73,11 +74,7 @@ def validate_tasks_file(path: Path) -> list[str]:
     if not path.exists():
         print(f"Error: Tasks file not found: {path}", file=sys.stderr)
         sys.exit(1)
-    tasks = [
-        line.strip()
-        for line in path.read_text().splitlines()
-        if line.strip() and not line.startswith("#")
-    ]
+    tasks = [line.strip() for line in path.read_text().splitlines() if line.strip() and not line.startswith("#")]
     if not tasks:
         print(f"Error: No tasks found in {path}", file=sys.stderr)
         sys.exit(1)

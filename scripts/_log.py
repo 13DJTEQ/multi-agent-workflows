@@ -21,6 +21,7 @@ Event taxonomy (see plan P1-B):
     phase.wait.start, phase.wait.done,
     aggregate.start, aggregate.done
 """
+
 from __future__ import annotations
 
 import atexit

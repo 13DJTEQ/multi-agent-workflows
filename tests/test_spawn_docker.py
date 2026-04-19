@@ -1,7 +1,6 @@
 """Tests for spawn_docker.py."""
 
 import subprocess
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -84,7 +83,7 @@ class TestBackoffCalculation:
         b0 = sd.calculate_backoff(0, base_delay=2.0, max_delay=60.0)
         b1 = sd.calculate_backoff(1, base_delay=2.0, max_delay=60.0)
         b2 = sd.calculate_backoff(2, base_delay=2.0, max_delay=60.0)
-        
+
         # Should grow exponentially (with jitter)
         assert b0 < b1 < b2
 
@@ -135,7 +134,7 @@ class TestSpawnContainer:
             stderr="",
             returncode=0,
         )
-        
+
         result = sd.spawn_container(
             task="Test task",
             task_id="agent-0-test",
@@ -149,17 +148,15 @@ class TestSpawnContainer:
             share="team",
             extra_env={},
         )
-        
+
         assert result.status == "running"
         assert result.container_id == "container123"
         assert mock_run.called
 
     @patch("spawn_docker.subprocess.run")
     def test_failed_spawn(self, mock_run, tmp_path):
-        mock_run.side_effect = subprocess.CalledProcessError(
-            1, "docker", stderr="Image not found"
-        )
-        
+        mock_run.side_effect = subprocess.CalledProcessError(1, "docker", stderr="Image not found")
+
         result = sd.spawn_container(
             task="Test task",
             task_id="agent-0-test",
@@ -173,7 +170,7 @@ class TestSpawnContainer:
             share="team",
             extra_env={},
         )
-        
+
         assert result.status == "failed"
         assert result.container_id == ""
 
@@ -184,18 +181,18 @@ class TestWaitForContainer:
     @patch("spawn_docker.subprocess.run")
     def test_successful_completion(self, mock_run):
         mock_run.return_value = MagicMock(stdout="0\n", stderr="")
-        
+
         exit_code, error = sd.wait_for_container("test-container", timeout=60)
-        
+
         assert exit_code == 0
         assert error == ""
 
     @patch("spawn_docker.subprocess.run")
     def test_failed_container(self, mock_run):
         mock_run.return_value = MagicMock(stdout="1\n", stderr="")
-        
+
         exit_code, error = sd.wait_for_container("test-container", timeout=60)
-        
+
         assert exit_code == 1
 
     @patch("spawn_docker.subprocess.run")
@@ -205,9 +202,9 @@ class TestWaitForContainer:
             subprocess.TimeoutExpired("docker wait", 60),
             MagicMock(stdout="", stderr=""),
         ]
-        
+
         exit_code, error = sd.wait_for_container("test-container", timeout=60)
-        
+
         assert exit_code == -1
         assert "Timeout" in error
 
@@ -218,9 +215,9 @@ class TestValidateTasksFile:
     def test_valid_file(self, tmp_path):
         tasks_file = tmp_path / "tasks.txt"
         tasks_file.write_text("Task 1\nTask 2\n# Comment\nTask 3")
-        
+
         result = sd.validate_tasks_file(tasks_file)
-        
+
         assert result == ["Task 1", "Task 2", "Task 3"]
 
     def test_missing_file(self, tmp_path):
@@ -230,6 +227,6 @@ class TestValidateTasksFile:
     def test_empty_file(self, tmp_path):
         tasks_file = tmp_path / "empty.txt"
         tasks_file.write_text("# Only comments\n\n")
-        
+
         with pytest.raises(SystemExit):
             sd.validate_tasks_file(tasks_file)

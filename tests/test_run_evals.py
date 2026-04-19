@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 import run_evals as re_mod
 
 

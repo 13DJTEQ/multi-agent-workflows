@@ -1,11 +1,9 @@
 """Tests for aggregate_results.py."""
 
 import json
-from pathlib import Path
-
-import pytest
 
 import aggregate_results as ar
+import pytest
 
 
 class TestMergeDicts:
@@ -92,7 +90,7 @@ class TestStrategyVote:
         voted = ar.strategy_vote(results, vote_field="decision")
         assert voted["decision"] is True
         assert voted["vote_count"] == {"True": 2, "False": 1}
-        assert voted["winner_ratio"] == pytest.approx(2/3)
+        assert voted["winner_ratio"] == pytest.approx(2 / 3)
 
     def test_majority_false(self):
         results = [
@@ -130,9 +128,7 @@ class TestStrategyVote:
             {"decision": False, "confidence": 0.5},
             {"decision": False, "confidence": 0.5},
         ]
-        voted = ar.strategy_vote(
-            results, vote_field="decision", weighted=True, confidence_field="confidence"
-        )
+        voted = ar.strategy_vote(results, vote_field="decision", weighted=True, confidence_field="confidence")
         # True has 0.9 weight vs False with 1.0 total
         assert voted["decision"] is False
 
@@ -175,19 +171,19 @@ class TestFindResultFiles:
         (tmp_path / "agent-1" / "result.json").write_text("{}")
         (tmp_path / "agent-2").mkdir()
         (tmp_path / "agent-2" / "result.json").write_text("{}")
-        
+
         files = ar.find_result_files(tmp_path)
         assert len(files) == 2
 
     def test_fallback_to_any_json(self, tmp_path):
         (tmp_path / "output.json").write_text("{}")
-        
+
         files = ar.find_result_files(tmp_path, pattern="result.json")
         assert len(files) == 1
 
     def test_fallback_to_markdown(self, tmp_path):
         (tmp_path / "report.md").write_text("# Report")
-        
+
         files = ar.find_result_files(tmp_path)
         assert len(files) == 1
 
@@ -198,21 +194,21 @@ class TestLoadFunctions:
     def test_load_json_file(self, tmp_path):
         f = tmp_path / "test.json"
         f.write_text('{"key": "value"}')
-        
+
         result = ar.load_json_file(f)
         assert result == {"key": "value"}
 
     def test_load_json_file_invalid(self, tmp_path):
         f = tmp_path / "bad.json"
         f.write_text("not json")
-        
+
         result = ar.load_json_file(f)
         assert result is None
 
     def test_load_text_file(self, tmp_path):
         f = tmp_path / "test.txt"
         f.write_text("hello world")
-        
+
         result = ar.load_text_file(f)
         assert result == "hello world"
 
@@ -224,9 +220,9 @@ class TestIntegration:
         files = ar.find_result_files(tmp_outputs)
         results = [ar.load_json_file(f) for f in files]
         results = [r for r in results if r is not None]
-        
+
         merged = ar.strategy_merge(results)
-        
+
         # All modules should be present
         assert "module" in merged or len(results) == 3
 
@@ -234,9 +230,9 @@ class TestIntegration:
         files = ar.find_result_files(tmp_outputs)
         results = [ar.load_json_file(f) for f in files]
         results = [r for r in results if r is not None]
-        
+
         voted = ar.strategy_vote(results, vote_field="decision")
-        
+
         # 2 True vs 1 False
         assert voted["decision"] is True
         assert voted["winner_count"] == 2
@@ -312,9 +308,18 @@ class TestIncrementalRollup:
 
     def _envelopes(self):
         return [
-            {"status": "ok", "metrics": {"tokens_used": 100, "cost_usd": 0.01, "duration_seconds": 1.0, "model": "claude-opus-4"}},
-            {"status": "ok", "metrics": {"tokens_used": 250, "cost_usd": 0.04, "duration_seconds": 2.5, "model": "gpt-4"}},
-            {"status": "ok", "metrics": {"tokens_used": 50, "cost_usd": 0.005, "duration_seconds": 0.5, "model": "claude-opus-4"}},
+            {
+                "status": "ok",
+                "metrics": {"tokens_used": 100, "cost_usd": 0.01, "duration_seconds": 1.0, "model": "claude-opus-4"},
+            },
+            {
+                "status": "ok",
+                "metrics": {"tokens_used": 250, "cost_usd": 0.04, "duration_seconds": 2.5, "model": "gpt-4"},
+            },
+            {
+                "status": "ok",
+                "metrics": {"tokens_used": 50, "cost_usd": 0.005, "duration_seconds": 0.5, "model": "claude-opus-4"},
+            },
         ]
 
     def test_incremental_equals_batch(self):
@@ -393,10 +398,14 @@ class TestStreamingMainIntegration:
         out = tmp_path / "report.json"
         argv = [
             "aggregate_results.py",
-            "--input-dir", str(root),
-            "--output", str(out),
-            "--strategy", "merge",
-            "--max-memory-mb", str(100 / (1024 * 1024)),  # 100-byte budget
+            "--input-dir",
+            str(root),
+            "--output",
+            str(out),
+            "--strategy",
+            "merge",
+            "--max-memory-mb",
+            str(100 / (1024 * 1024)),  # 100-byte budget
             "--include-stats",
         ]
         monkeypatch.setattr("sys.argv", argv)

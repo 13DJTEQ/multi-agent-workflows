@@ -3,8 +3,6 @@
 import subprocess
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 import spawn_k8s as sk
 
 
@@ -44,19 +42,19 @@ class TestCreateJobManifest:
     """Tests for create_job_manifest function."""
 
     def _kwargs(self, **overrides):
-        base = dict(
-            task="Analyze X",
-            job_name="agent-0-analyze-x",
-            namespace="warp-agents",
-            image="warpdotdev/dev-base:latest",
-            secret_name="warp-api-key",
-            pvc_name=None,
-            memory_request="2Gi",
-            memory_limit="4Gi",
-            cpu_request="1",
-            cpu_limit="2",
-            share="team",
-        )
+        base = {
+            "task": "Analyze X",
+            "job_name": "agent-0-analyze-x",
+            "namespace": "warp-agents",
+            "image": "warpdotdev/dev-base:latest",
+            "secret_name": "warp-api-key",
+            "pvc_name": None,
+            "memory_request": "2Gi",
+            "memory_limit": "4Gi",
+            "cpu_request": "1",
+            "cpu_limit": "2",
+            "share": "team",
+        }
         base.update(overrides)
         return base
 

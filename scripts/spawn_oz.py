@@ -21,6 +21,7 @@ Design notes:
       returns immediately after launching all runs (fire-and-forget, useful
       for scheduled workflows).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -37,14 +38,14 @@ from typing import Optional
 
 # Shared helpers
 try:
-    from scripts._common import calculate_backoff, check_circuit_breaker, validate_tasks_file  # type: ignore
+    from scripts._common import calculate_backoff, validate_tasks_file  # type: ignore
 except ImportError:
     try:
-        from ._common import calculate_backoff, check_circuit_breaker, validate_tasks_file  # type: ignore
+        from ._common import calculate_backoff, validate_tasks_file  # type: ignore
     except ImportError:
         # Fallback: direct script execution without package context
         sys.path.insert(0, str(Path(__file__).parent))
-        from _common import calculate_backoff, check_circuit_breaker, validate_tasks_file  # type: ignore
+        from _common import calculate_backoff, validate_tasks_file  # type: ignore
 
 try:
     from scripts.credential_helper import resolve_secret  # type: ignore
@@ -56,11 +57,14 @@ except ImportError:
 
 # Structured logging (optional; degrades gracefully if unavailable)
 try:
-    from scripts._log import configure as _log_configure, log_event, add_log_format_arg  # type: ignore
+    from scripts._log import add_log_format_arg, log_event
+    from scripts._log import configure as _log_configure  # type: ignore
 except ImportError:
     try:
-        from ._log import configure as _log_configure, log_event, add_log_format_arg  # type: ignore
+        from ._log import add_log_format_arg, log_event
+        from ._log import configure as _log_configure  # type: ignore
     except ImportError:
+
         def _log_configure(*_a, **_k): ...
         def log_event(*_a, **_k): ...
         def add_log_format_arg(_p): ...
@@ -101,8 +105,10 @@ class OzAgentResult:
     def to_envelope(self) -> dict:
         """Emit in the common result envelope (references/result-schema.md)."""
         # Map internal Oz states to envelope-canonical status.
-        status = "ok" if self.status in {"succeeded", "completed"} else (
-            "failed" if self.status in {"failed", "cancelled", "errored"} else "partial"
+        status = (
+            "ok"
+            if self.status in {"succeeded", "completed"}
+            else ("failed" if self.status in {"failed", "cancelled", "errored"} else "partial")
         )
         env: dict = {
             "schema_version": "1",
@@ -141,16 +147,8 @@ def _extract_metrics_from_oz(payload: dict) -> dict:
     out: dict = {}
     nested = payload.get("usage") or payload.get("metrics")
     if isinstance(nested, dict) and nested:
-        tokens = (
-            nested.get("tokens_used")
-            or nested.get("total_tokens")
-            or nested.get("tokens")
-        )
-        cost = (
-            nested.get("cost_usd")
-            or nested.get("cost")
-            or nested.get("total_cost_usd")
-        )
+        tokens = nested.get("tokens_used") or nested.get("total_tokens") or nested.get("tokens")
+        cost = nested.get("cost_usd") or nested.get("cost") or nested.get("total_cost_usd")
         model = nested.get("model") or payload.get("model")
         if isinstance(tokens, (int, float)) and not isinstance(tokens, bool):
             out["tokens_used"] = int(tokens)
@@ -193,11 +191,7 @@ def generate_task_id(task: str, index: int, phase: Optional[str] = None) -> str:
 
 def check_oz_available() -> tuple[bool, str]:
     """Preflight: oz CLI installed and WARP_API_KEY reachable."""
-    if not any(
-        os.access(os.path.join(p, "oz"), os.X_OK)
-        for p in os.environ.get("PATH", "").split(os.pathsep)
-        if p
-    ):
+    if not any(os.access(os.path.join(p, "oz"), os.X_OK) for p in os.environ.get("PATH", "").split(os.pathsep) if p):
         return False, "`oz` CLI not found in PATH. Install Warp CLI: https://docs.warp.dev/reference/cli"
     # `oz` returns 0 for help even without auth; real check happens at spawn time.
     try:
@@ -381,16 +375,38 @@ Examples:
 
     # Execution
     exec_group = parser.add_argument_group("Execution Control")
-    exec_group.add_argument("--parallel", type=int, default=4, metavar="N", help="Max parallel spawns (default: %(default)s)")
-    exec_group.add_argument("--timeout", type=int, default=OZ_RUN_GET_MAX_WAIT_SEC, metavar="SEC", help="Per-run wait timeout (default: %(default)s)")
-    exec_group.add_argument("--poll-interval", type=float, default=OZ_RUN_GET_POLL_SEC, metavar="SEC", help="Polling interval when --wait (default: %(default)s)")
+    exec_group.add_argument(
+        "--parallel", type=int, default=4, metavar="N", help="Max parallel spawns (default: %(default)s)"
+    )
+    exec_group.add_argument(
+        "--timeout",
+        type=int,
+        default=OZ_RUN_GET_MAX_WAIT_SEC,
+        metavar="SEC",
+        help="Per-run wait timeout (default: %(default)s)",
+    )
+    exec_group.add_argument(
+        "--poll-interval",
+        type=float,
+        default=OZ_RUN_GET_POLL_SEC,
+        metavar="SEC",
+        help="Polling interval when --wait (default: %(default)s)",
+    )
     exec_group.add_argument("--phase", metavar="ID", help="Phase identifier for multi-phase workflows")
 
     # Fault tolerance
     fault_group = parser.add_argument_group("Fault Tolerance")
-    fault_group.add_argument("--circuit-breaker", type=float, default=0.5, metavar="RATIO", help="Stop spawning if failure rate exceeds threshold (default: %(default)s)")
+    fault_group.add_argument(
+        "--circuit-breaker",
+        type=float,
+        default=0.5,
+        metavar="RATIO",
+        help="Stop spawning if failure rate exceeds threshold (default: %(default)s)",
+    )
     fault_group.add_argument("--retry-failed", action="store_true", help="Retry failed spawns with exponential backoff")
-    fault_group.add_argument("--max-retries", type=int, default=3, metavar="N", help="Max retries per task (default: %(default)s)")
+    fault_group.add_argument(
+        "--max-retries", type=int, default=3, metavar="N", help="Max retries per task (default: %(default)s)"
+    )
     fault_group.add_argument("--skip-preflight", action="store_true", help="Skip `oz --version` preflight")
     fault_group.add_argument(
         "--credential-backend",
@@ -403,7 +419,13 @@ Examples:
     out_group = parser.add_argument_group("Output")
     out_group.add_argument("--wait", action="store_true", help="Wait for all runs to reach terminal state")
     out_group.add_argument("--json", action="store_true", help="Emit results as JSON envelope per task")
-    out_group.add_argument("--output-dir", type=Path, default=Path("./outputs"), metavar="DIR", help="Directory to write per-run result.json (default: %(default)s)")
+    out_group.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("./outputs"),
+        metavar="DIR",
+        help="Directory to write per-run result.json (default: %(default)s)",
+    )
     add_log_format_arg(out_group)
 
     args = parser.parse_args()
@@ -452,10 +474,18 @@ Examples:
 
     results: list[OzAgentResult] = []
     print(f"Spawning {len(tasks)} cloud agents in environment {args.environment}...", file=sys.stderr)
-    log_event("spawn.start", backend="oz", tasks=len(tasks), phase=args.phase, environment=args.environment, parallel=args.parallel)
+    log_event(
+        "spawn.start",
+        backend="oz",
+        tasks=len(tasks),
+        phase=args.phase,
+        environment=args.environment,
+        parallel=args.parallel,
+    )
 
     # P1-C: O(1) circuit breaker via running counters.
     from scripts._common import check_circuit_breaker_counters as _cb_counters
+
     cb_failed = 0
     cb_total = 0
 
@@ -467,7 +497,9 @@ Examples:
                     f"Circuit breaker tripped at {args.circuit_breaker * 100:.0f}% failure rate; halting spawn.",
                     file=sys.stderr,
                 )
-                log_event("spawn.circuit_breaker.tripped", backend="oz", threshold=args.circuit_breaker, completed=cb_total)
+                log_event(
+                    "spawn.circuit_breaker.tripped", backend="oz", threshold=args.circuit_breaker, completed=cb_total
+                )
                 break
             task_id = generate_task_id(task, i, args.phase)
             fut = pool.submit(spawn_oz_agent, task=task, task_id=task_id, environment=args.environment)

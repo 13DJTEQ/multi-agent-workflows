@@ -11,6 +11,7 @@ Works with or without the `jsonschema` package installed:
 - Otherwise, a built-in minimal validator checks the envelope's required
   fields and enum values (sufficient for the v1 envelope; falls back gracefully).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -42,8 +43,7 @@ class ValidationResult:
 def _load_schema() -> dict:
     if not _SCHEMA_PATH.exists():
         raise FileNotFoundError(
-            f"Schema not found at {_SCHEMA_PATH}. "
-            "This file ships with the skill; reinstall if missing."
+            f"Schema not found at {_SCHEMA_PATH}. " "This file ships with the skill; reinstall if missing."
         )
     return json.loads(_SCHEMA_PATH.read_text())
 
@@ -63,9 +63,7 @@ def _builtin_validate(obj: Any) -> list[str]:
     if "schema_version" not in obj:
         errors.append("missing required field: schema_version")
     elif obj["schema_version"] != SCHEMA_VERSION_CONST:
-        errors.append(
-            f"schema_version must be '{SCHEMA_VERSION_CONST}', got {obj['schema_version']!r}"
-        )
+        errors.append(f"schema_version must be '{SCHEMA_VERSION_CONST}', got {obj['schema_version']!r}")
     if "status" not in obj:
         errors.append("missing required field: status")
     elif obj["status"] not in VALID_STATUS:

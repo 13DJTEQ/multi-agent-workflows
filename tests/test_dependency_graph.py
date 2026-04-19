@@ -1,4 +1,5 @@
 """Tests for scripts/dependency_graph.py."""
+
 from __future__ import annotations
 
 import json
