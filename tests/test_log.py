@@ -111,6 +111,7 @@ class TestArgparseHelper:
         _log.add_log_format_arg(p)
         args = p.parse_args([])
         assert args.log_format == "text"
+        assert args.log_flush_each is False
 
     def test_add_log_format_arg_accepts_json(self):
         import argparse
@@ -127,3 +128,97 @@ class TestArgparseHelper:
         _log.add_log_format_arg(p)
         with pytest.raises(SystemExit):
             p.parse_args(["--log-format", "yaml"])
+
+    def test_add_log_format_arg_flush_each_flag(self):
+        import argparse
+
+        p = argparse.ArgumentParser()
+        _log.add_log_format_arg(p)
+        args = p.parse_args(["--log-flush-each"])
+        assert args.log_flush_each is True
+
+
+class TestBufferedFlush:
+    """P1-D: flush policy. Buffered by default, atexit-safe, replay-complete."""
+
+    def test_buffered_does_not_flush_every_event(self):
+        buf = io.StringIO()
+
+        class CountingBuffer(io.StringIO):
+            def __init__(self):
+                super().__init__()
+                self.flush_count = 0
+
+            def flush(self):
+                self.flush_count += 1
+                super().flush()
+
+        cb = CountingBuffer()
+        _log.configure(format="json", stream=cb, flush_interval_events=10000, flush_interval_seconds=9999)
+        for i in range(20):
+            _log.log_event("spawn.start", i=i)
+        # No flush should have triggered (below thresholds)
+        assert cb.flush_count == 0
+
+    def test_events_threshold_triggers_flush(self):
+        class CountingBuffer(io.StringIO):
+            def __init__(self):
+                super().__init__()
+                self.flush_count = 0
+
+            def flush(self):
+                self.flush_count += 1
+                super().flush()
+
+        cb = CountingBuffer()
+        _log.configure(format="json", stream=cb, flush_interval_events=5, flush_interval_seconds=9999)
+        for i in range(12):
+            _log.log_event("tick", i=i)
+        # 12 events / 5-event threshold = 2 threshold-triggered flushes
+        assert cb.flush_count >= 2
+
+    def test_flush_each_legacy_behavior(self):
+        class CountingBuffer(io.StringIO):
+            def __init__(self):
+                super().__init__()
+                self.flush_count = 0
+
+            def flush(self):
+                self.flush_count += 1
+                super().flush()
+
+        cb = CountingBuffer()
+        _log.configure(format="json", stream=cb, flush_each=True)
+        for _ in range(7):
+            _log.log_event("tick")
+        assert cb.flush_count == 7
+
+    def test_manual_flush_drains(self):
+        buf = io.StringIO()
+        _log.configure(format="json", stream=buf, flush_interval_events=10000, flush_interval_seconds=9999)
+        for i in range(3):
+            _log.log_event("tick", i=i)
+        _log.flush()
+        # All 3 events must be present in buffer after manual flush
+        lines = [ln for ln in buf.getvalue().splitlines() if ln]
+        assert len(lines) == 3
+
+    def test_zero_event_loss_replay(self):
+        """All buffered events must be in the stream after flush() — no drop."""
+        buf = io.StringIO()
+        _log.configure(format="json", stream=buf, flush_interval_events=100, flush_interval_seconds=9999)
+        for i in range(57):
+            _log.log_event("replay", i=i)
+        _log.flush()
+        lines = [ln for ln in buf.getvalue().splitlines() if ln]
+        assert len(lines) == 57
+        indices = [json.loads(ln)["i"] for ln in lines]
+        assert indices == list(range(57))
+
+    def test_atexit_registered_once(self):
+        """Re-configuring does not register the atexit flush twice."""
+        _log.configure(format="json")
+        _log.configure(format="json")
+        # Not directly observable without poking atexit internals; use the
+        # module-level sentinel instead.
+        assert _log._atexit_registered is True

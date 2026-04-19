@@ -407,7 +407,10 @@ Examples:
     add_log_format_arg(out_group)
 
     args = parser.parse_args()
-    _log_configure(format=getattr(args, "log_format", "text"))
+    _log_configure(
+        format=getattr(args, "log_format", "text"),
+        flush_each=getattr(args, "log_flush_each", False),
+    )
 
     # WARP_API_KEY sanity check (oz CLI needs it)
     api_key: Optional[str] = None
