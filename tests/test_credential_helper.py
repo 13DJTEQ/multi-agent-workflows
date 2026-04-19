@@ -100,6 +100,108 @@ class TestVaultAndAWSScaffolds:
             ch.AWSSecretsBackend().get("X")
 
 
+class TestOzSecretBackend:
+    def test_get_is_write_only(self):
+        with pytest.raises(NotImplementedError, match="write-only"):
+            ch.OzSecretBackend().get("X")
+
+    def test_set_invokes_oz_create_with_stdin(self, monkeypatch):
+        captured = {}
+
+        def fake_run(cmd, **kwargs):
+            captured["cmd"] = cmd
+            captured["input"] = kwargs.get("input")
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        ch.OzSecretBackend().set("WARP_API_KEY", "sk-secret")
+        assert captured["cmd"][:3] == ["oz", "secret", "create"]
+        assert "WARP_API_KEY" in captured["cmd"]
+        # Value must be piped via stdin, never inlined on argv
+        assert captured["input"] == "sk-secret"
+        assert "sk-secret" not in captured["cmd"]
+
+    def test_set_with_team_and_description(self, monkeypatch):
+        cmds = []
+
+        def fake_run(cmd, **kwargs):
+            cmds.append(cmd)
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        ch.OzSecretBackend().set("K", "V", team=True, description="team key")
+        assert "--team" in cmds[0]
+        assert "-d" in cmds[0]
+        assert "team key" in cmds[0]
+
+    def test_set_upgrades_to_update_on_conflict(self, monkeypatch):
+        cmds = []
+
+        def fake_run(cmd, **kwargs):
+            cmds.append(cmd)
+            if cmd[2] == "create":
+                raise subprocess.CalledProcessError(
+                    1, cmd, stderr="Error: secret already exists"
+                )
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        ch.OzSecretBackend().set("K", "V")
+        assert [c[2] for c in cmds] == ["create", "update"]
+
+    def test_missing_cli_raises_runtime_on_set(self, monkeypatch):
+        def fake_run(*args, **kwargs):
+            raise FileNotFoundError("oz")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        with pytest.raises(RuntimeError, match="oz.*CLI not found"):
+            ch.OzSecretBackend().set("X", "Y")
+
+    def test_delete_calls_oz_secret_delete(self, monkeypatch):
+        cmds = []
+
+        def fake_run(cmd, **kwargs):
+            cmds.append(cmd)
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        ch.OzSecretBackend().delete("K")
+        assert cmds == [["oz", "secret", "delete", "K"]]
+
+    def test_list_secrets_parses_list_of_dicts(self, monkeypatch):
+        payload = '[{"name": "WARP_API_KEY"}, {"name": "GITHUB_TOKEN"}]'
+
+        def fake_run(cmd, **kwargs):
+            return subprocess.CompletedProcess(cmd, 0, stdout=payload, stderr="")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        assert ch.OzSecretBackend().list_secrets() == ["WARP_API_KEY", "GITHUB_TOKEN"]
+
+    def test_list_secrets_parses_wrapped_dict(self, monkeypatch):
+        payload = '{"secrets": [{"id": "X"}, "Y"]}'
+
+        def fake_run(cmd, **kwargs):
+            return subprocess.CompletedProcess(cmd, 0, stdout=payload, stderr="")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        assert ch.OzSecretBackend().list_secrets() == ["X", "Y"]
+
+    def test_list_secrets_handles_bad_json(self, monkeypatch):
+        def fake_run(cmd, **kwargs):
+            return subprocess.CompletedProcess(cmd, 0, stdout="not json", stderr="")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        assert ch.OzSecretBackend().list_secrets() == []
+
+
+class TestBackendRegistry:
+    def test_oz_is_registered(self):
+        assert isinstance(ch.get_backend("oz"), ch.OzSecretBackend)
+
+    def test_registry_contains_all_backends(self):
+        assert set(ch.BACKENDS) == {"env", "keychain", "1password", "vault", "aws", "oz"}
+
+
 class TestGetBackend:
     def test_explicit_name(self):
         assert isinstance(ch.get_backend("env"), ch.EnvBackend)

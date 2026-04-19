@@ -377,7 +377,7 @@ done
 
 ## Credential Handling
 
-Secrets (like `WARP_API_KEY`) are resolved via `scripts/credential_helper.py` with a pluggable backend. Default on macOS is the Keychain; scaffolding exists for 1Password, Vault, and AWS Secrets Manager.
+Secrets (like `WARP_API_KEY`) are resolved via `scripts/credential_helper.py` with a pluggable backend. Default on macOS is the Keychain; 1Password read is supported; Vault and AWS are scaffolded; **Oz** is supported for provisioning secrets to Warp's cloud platform.
 
 ```bash
 # One-time setup: store the key in macOS Keychain
@@ -385,9 +385,33 @@ python3 <skill_dir>/scripts/credential_helper.py set WARP_API_KEY
 
 # spawn_docker.py auto-resolves via env → keychain; override with:
 python3 <skill_dir>/scripts/spawn_docker.py --credential-backend 1password --tasks ...
+
+# Provision a secret to Oz (so cloud agents can consume it as an env var):
+python3 <skill_dir>/scripts/credential_helper.py --backend oz set WARP_API_KEY
 ```
 
-See `scripts/credential_helper.py --help` for all backends. Never inline secrets in prompts.
+Backends at a glance: `env`, `keychain` (macOS), `1password` (read), `vault`/`aws` (scaffold), `oz` (write-only — values inject into cloud agents as env vars at runtime, not readable from the CLI by design). Never inline secrets in prompts.
+
+## Running on Oz (cloud agents)
+
+This skill targets **local** parallel execution. To run it from inside an Oz cloud agent, keep two things in mind:
+
+**Backend selection on Oz.** The prebuilt `-agents` images do not include a Docker daemon, so the `spawn_docker` backend will fail unless you enable Docker-in-Docker in your environment. Prefer:
+- **Kubernetes** (`spawn_k8s.py`) when your environment has `kubectl` and a cluster
+- **CI** (GitHub Actions matrix) for PR-integrated fan-out — see `references/ci-backend.md`
+- **Remote/SSH** for fanning out to external hosts with dedicated hardware
+
+**Credentials on Oz.** Inside the cloud agent, your Oz-provisioned secrets arrive as environment variables — use `--credential-backend env`. From your Mac, provision them with the `oz` backend:
+```bash
+# Admin-side: create/update secrets in Oz
+python3 <skill_dir>/scripts/credential_helper.py --backend oz set WARP_API_KEY
+python3 <skill_dir>/scripts/credential_helper.py --backend oz set GITHUB_TOKEN
+
+# Cloud-agent-side: resolve from env (injected by Oz runtime)
+python3 <skill_dir>/scripts/spawn_k8s.py --credential-backend env --tasks ...
+```
+
+Oz secret values are **write-only from the CLI** — by design they cannot be read back. The `oz` backend exposes `set` / `delete` / `list_secrets()`; calling `get` raises `NotImplementedError` with guidance to use `env` from inside the agent.
 
 ## Dependency DAG Workflows
 
